@@ -142,6 +142,23 @@ function blobImg(d,b,lab){
   return cc;
 }
 
+function regionImg(d,x0,y0,x1,y1){
+  var w=x1-x0,h=y1-y0;
+  mc.width=w;mc.height=h;
+  var im=mx2.createImageData(w,h),o=im.data,x,y,k=0;
+  for(y=y0;y<y1;y++)for(x=x0;x<x1;x++){
+    var c=d.ink[y*d.w+x]?0:255;
+    o[k++]=c;o[k++]=c;o[k++]=c;o[k++]=255;
+  }
+  mx2.putImageData(im,0,0);
+  var sc=100/h,tw=Math.max(1,Math.round(w*sc));
+  cc.width=tw+60;cc.height=160;
+  cx.fillStyle='#fff';cx.fillRect(0,0,cc.width,cc.height);
+  cx.imageSmoothingEnabled=true;
+  cx.drawImage(mc,30,30,tw,100);
+  return cc;
+}
+
 function mapBox(b,dim){
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
@@ -184,7 +201,17 @@ async function readFrame(){
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
     }
   }
-  return {dim:dim,words:group(acc).filter(function(g){return !/^0+$/.test(g.text)})};
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}),wi;
+  for(wi=0;wi<words.length;wi++){
+    var g=words[wi];
+    if(g.text!=='1')continue;
+    var bb=g.bbox,hh=bb.y1-bb.y0,rx1=Math.min(dim.w,bb.x1+Math.round(3.2*hh));
+    if(rx1-bb.x0<hh)continue;
+    await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789'});
+    var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
+    if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
+  }
+  return {dim:dim,words:words};
 }
 
 async function loop(){
