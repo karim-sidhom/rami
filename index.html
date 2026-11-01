@@ -671,6 +671,32 @@ function cardPixels(cv){
   const c=document.createElement('canvas');c.width=PW;c.height=PH;const x=c.getContext('2d',{willReadFrequently:true});
   x.imageSmoothingQuality='high';x.drawImage(cv,0,0,PW,PH);return x.getImageData(0,0,PW,PH).data;
 }
+/* nombre de trous (boucles) d'un symbole : 8 en a 2 ; 6, 9, 0, 4, A, Q en ont 1 ; 2, 3, 5, 7, J, K aucun */
+function countHoles(c,rw){
+  const bw=c.bw+2,bh=c.bh+2,g=new Uint8Array(bw*bh);
+  for(const k of c.pts)g[((((k/rw)|0)-c.mny+1)*bw)+(k%rw)-c.mnx+1]=1;
+  const seen=new Uint8Array(bw*bh),st=[0];seen[0]=1;
+  while(st.length){const k=st.pop(),x=k%bw,y=(k/bw)|0;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const qx=x+dx,qy=y+dy;
+      if(qx<0||qy<0||qx>=bw||qy>=bh)continue;const j=qy*bw+qx;if(!g[j]&&!seen[j]){seen[j]=1;st.push(j);}}}
+  let holes=0;
+  for(let i=0;i<bw*bh;i++){if(g[i]||seen[i])continue;holes++;const q=[i];seen[i]=1;
+    while(q.length){const k=q.pop(),x=k%bw,y=(k/bw)|0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const qx=x+dx,qy=y+dy;
+        if(qx<0||qy<0||qx>=bw||qy>=bh)continue;const j=qy*bw+qx;if(!g[j]&&!seen[j]){seen[j]=1;q.push(j);}}}}
+  return holes;
+}
+const GLYPH_HOLES={A:1,'2':0,'3':0,'4':1,'5':0,'6':1,'7':0,'8':2,'9':1,J:0,Q:1,K:0};
+/* solidité = surface du symbole / surface de son enveloppe convexe : pique ~0.9+, trèfle ~0.8 (mesuré sur de vraies photos de cartes) */
+function solidity(pts,rw){
+  const P=pts.map(k=>[k%rw,(k/rw)|0]);P.sort((u,v)=>u[0]-v[0]||u[1]-v[1]);
+  const cr=(o,u,v)=>(u[0]-o[0])*(v[1]-o[1])-(u[1]-o[1])*(v[0]-o[0]);
+  const lo=[];for(const q of P){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}
+  const up=[];for(let i=P.length-1;i>=0;i--){const q=P[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],q)<=0)up.pop();up.push(q);}
+  const h=lo.slice(0,-1).concat(up.slice(0,-1));let a=0;
+  for(let i=0;i<h.length;i++){const u=h[i],v=h[(i+1)%h.length];a+=u[0]*v[1]-v[0]*u[1];}
+  a=Math.abs(a)/2;return a?pts.length/a:1;
+}
 function readCornerOne(d,paper){
   const RX0=4,RY0=4,RX1=44,RY1=104,rw=RX1-RX0,rh=RY1-RY0;
   const ink=new Uint8Array(rw*rh),redK=new Uint8Array(rw*rh);
@@ -721,23 +747,49 @@ function readCornerOne(d,paper){
   let rk=null,rv=0;
   if(rank.length===2){
     const a=rank.slice().sort((p,q)=>(p.mnx+p.bw/2)-(q.mnx+q.bw/2));
-    if(Math.abs(a[0].cy-a[1].cy)<6&&a[0].bw<a[1].bw*.8&&a[0].bh>=a[1].bh*.8){rk='10';rv=0.9;}
+    if(Math.abs(a[0].cy-a[1].cy)<6&&a[0].bw<a[1].bw*.8&&a[0].bh>=a[1].bh*.8&&a[0].bw<a[0].bh*.55&&Math.abs(a[0].bh-a[1].bh)<=a[1].bh*.25&&countHoles(a[1],rw)>=1){rk='10';rv=0.9;}
     else return null;
   }else{
     const c=rank[0],g=normShape(mk(c),rw,c.mnx,c.mny,c.bw,c.bh,GNW,GNH);
     let bg=null,bv=-9;
-    for(const G of GLYPHS)for(const t of glyphTpl[G]){const v=dot(g,t);if(v>bv){bv=v;bg=G;}}
+    const nh=countHoles(c,rw);
+    for(const G of GLYPHS)for(const t of glyphTpl[G]){const v=dot(g,t)+(nh===GLYPH_HOLES[G]?0.2:-0.2);if(v>bv){bv=v;bg=G;}}
     rk=bg;rv=bv;
   }
   return {id:bs+rk,conf:Math.min(rv,bsv),rv,sv:bsv,rank:rk,suit:bs};
+}
+/* pique ou trèfle d'après les gros symboles du centre (cartes 2 à 10 et as) : médiane des solidités */
+function centerSuit(d,red){
+  const n=PW*PH,L=new Float32Array(n);for(let i=0;i<n;i++)L[i]=(d[4*i]+d[4*i+1]+d[4*i+2])/3;
+  const srt=Float32Array.from(L).sort(),paper=srt[Math.floor(n*.9)];
+  const x0=Math.round(PW*.25),x1=Math.round(PW*.75),y0=Math.round(PH*.15),y1=Math.round(PH*.85);
+  const ink=new Uint8Array(n);
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const i=y*PW+x;const rd=d[4*i]-(d[4*i+1]+d[4*i+2])/2;if(red?(rd>=40&&L[i]<paper*.9):(L[i]<paper*.55&&rd<30))ink[i]=1;}
+  const lab=new Uint8Array(n),st=[],sols=[];
+  for(let s0=0;s0<n;s0++){if(!ink[s0]||lab[s0])continue;const pts=[];st.push(s0);lab[s0]=1;
+    while(st.length){const k=st.pop();pts.push(k);const px=k%PW,py=(k/PW)|0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const qx=px+dx,qy=py+dy;if(qx<x0||qx>=x1||qy<y0||qy>=y1)continue;const j=qy*PW+qx;if(ink[j]&&!lab[j]){lab[j]=1;st.push(j);}}}
+    if(pts.length<250||pts.length>2500)continue;
+    let mnx=1e9,mxx=-1,mny=1e9,mxy=-1;for(const k of pts){const px=k%PW,py=(k/PW)|0;if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;}
+    const bw=mxx-mnx+1,bh=mxy-mny+1;if(bw>45||bh>50||bw<12||Math.max(bw,bh)/Math.min(bw,bh)>1.7)continue;
+    if(!red)sols.push(solidity(pts,PW));
+    else{ /* coeur : large en haut / pointe en bas (ou l'inverse, cartes retournées) ; carreau : symétrique */
+      const ext=[];for(let b=0;b<10;b++){let a=1e9,z=-1;for(const k of pts){const py=((k/PW)|0)-mny,px=(k%PW)-mnx;if(Math.min(9,(py*10/bh)|0)===b){if(px<a)a=px;if(px>z)z=px;}}ext.push(z<0?0:(z-a+1)/bw);}
+      sols.push(Math.abs(ext[2]-ext[7]));}}
+  if(!sols.length)return null;
+  sols.sort((a,b)=>a-b);const m=sols[sols.length>>1];
+  return red?(m>0.25?'H':'D'):(m>0.875?'S':'C');
 }
 function readCorner(cv){
   const d0=cardPixels(cv),d1=cardPixels(rot180(cv));
   const lum=a=>{const v=[];for(let i=0;i<PW*PH;i+=7)v.push((a[4*i]+a[4*i+1]+a[4*i+2])/3);v.sort((x,y)=>x-y);return v[Math.floor(v.length*.9)]||200;};
   const r0=readCornerOne(d0,lum(d0)),r1=readCornerOne(d1,lum(d1));
-  if(r0&&(!r1||r0.conf>=r1.conf))return r0;
-  if(r1)return r1;
-  return null;
+  let r=null;
+  if(r0&&(!r1||r0.conf>=r1.conf))r=r0;else if(r1)r=r1;
+  if(r&&r.suit!=='J'){
+    const cs=centerSuit(d0,r.suit==='H'||r.suit==='D');if(cs){r.suit=cs;r.id=cs+r.rank;}
+  }
+  return r;
 }
 
 /* state */
@@ -784,8 +836,8 @@ function process(cv){
   let t=null,src='';
   if(cv){const rc=readCorner(cv);
     if(rc){t=[rc.id,rc.conf];src='coin';}
-    else{const top=recognize(cv);if(top[0]){t=top[0];src='image';}}}
-  $('#liveDbg').textContent=t?`${t[0]} ${Math.round(t[1]*100)}% (${src})`:'—';
+    else src='illisible';}
+  $('#liveDbg').textContent=t?`${t[0]} (${src})`:(cv?'coin illisible':'—');
   if(t){
     absent=0;
     if(cand===t[0])streak++;else{cand=t[0];streak=1;}
