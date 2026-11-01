@@ -479,14 +479,15 @@ function sayWait(t){
   });
 }
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let lastErr=null;
 function listen(){
   return new Promise(res=>{
     if(!SR){res(null);return;}
-    let got=null,r;
+    let got=null,r;lastErr=null;
     try{r=new SR();}catch(e){res(null);return;}
     r.lang=voice&&/^ar/i.test(voice.lang)?voice.lang:'ar-TN';r.interimResults=false;r.maxAlternatives=3;
     r.onresult=e=>{got=[...e.results[0]].map(x=>x.transcript).join(' ');};
-    r.onend=()=>res(got);r.onerror=()=>{};
+    r.onend=()=>res(got);r.onerror=e=>{lastErr=e&&e.error;};
     try{r.start();}catch(e){res(null);}
     setTimeout(()=>{try{r.stop();}catch(e){}},7000);
   });
@@ -497,14 +498,16 @@ function parsePlayers(t){t=norm2(t);
   if(/اربع|4|اربعه|اربعة|four/.test(t))return 4;
   if(/اثنين|اتنين|ثنين|زوز|زوج|اثنان|2|two/.test(t))return 2;return null;}
 async function ask(q,parse){
-  for(;;){
+  for(let n=0;n<3;n++){
     await sayWait(q);
     const a=await listen();
-    if(!SR){await sayWait('الميكروفون للتعرف على الصوت غير متاح في هذا المتصفح.');return null;}
+    if(!SR||['not-allowed','service-not-allowed','audio-capture','network','language-not-supported'].includes(lastErr)){
+      await sayWait('الميكروفون ما خدمش. نكمل بالقيم العادية.');return null;}
     const v=a==null?null:parse(a);
     if(v!==null)return v;
     q='ما سمعتكش مليح. عاود من فضلك.';
   }
+  await sayWait('ما فهمتش. نكمل بالقيم العادية.');return null;
 }
 async function setup(id){
   setupDone=false;
@@ -635,7 +638,11 @@ function stop(quiet){
   $('#liveWrap').style.display='none';$('#liveStart').textContent='▶ ابدأ اللعب';
   if(!quiet&&'speechSynthesis' in window)speechSynthesis.cancel();
 }
-$('#liveStart').onclick=()=>{if(stream)stop();else start();};
+$('#liveStart').onclick=()=>{
+  if(stream){stop();return;}
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('جاري التشغيل');u.lang='ar-SA';speechSynthesis.speak(u);}catch(e){}
+  start();
+};
 if(!/[?&]edit/.test(location.search)){
   document.body.classList.add('blind');
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.t==='live'));
