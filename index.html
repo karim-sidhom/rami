@@ -499,7 +499,9 @@ function parsePlayers(t){t=norm2(t);
 async function ask(q,parse){
   for(let n=0;n<3;n++){
     await sayWait(q);
+    await new Promise(r=>setTimeout(r,500));beep(1200);
     const a=await listen();
+    $('#liveDbg').textContent='🎤 '+(a||'—')+(lastErr?' ['+lastErr+']':'')+(SR?'':' [no SpeechRecognition]')+' '+location.protocol;
     if(!SR||['not-allowed','service-not-allowed','audio-capture','network','language-not-supported'].includes(lastErr)){
       await sayWait('الميكروفون ما خدمش. نكمل بالقيم العادية.');return null;}
     const v=a==null?null:parse(a);
@@ -626,7 +628,7 @@ async function start(){
     hand=[];table=[];log=[];dealDone=false;target=14;renderHand();render();
     armed=true;cand=null;streak=0;absent=0;
     timer=setInterval(()=>{if(vid.videoWidth)process(shotCanvas(vid,vid.videoWidth,vid.videoHeight));},TICK);
-    setup(++runId);
+    setupDone=true;target=14;analyze();sayWait('يلّا، وريني أوراقك واحدة بعد الأخرى.');
   }catch(e){say('الكاميرا غير متاحة.');stop(true);}
 }
 function stop(quiet){
