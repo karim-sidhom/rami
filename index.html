@@ -40,8 +40,7 @@ section.on{display:block}
 label.mode{margin-left:14px}
 ul{padding-right:20px;line-height:1.8}
 h3{color:var(--gold);margin:4px 0 8px}
-.blind nav,.blind #liveTiles,.blind .dbg{display:none!important}
-.blind #liveWrap{position:absolute!important;width:2px;height:2px;opacity:0;overflow:hidden}
+.blind nav,.blind #liveTiles{display:none!important}
 .big{display:block;width:100%;padding:26px 10px;font-size:26px;border-radius:14px}
 .say{font-size:20px;line-height:1.6;min-height:3em}
 .dbg{font-size:12px;opacity:.7}
@@ -492,10 +491,10 @@ function listen(){
     setTimeout(()=>{try{r.stop();}catch(e){}},7000);
   });
 }
-const norm2=t=>(t||'').toLowerCase().replace(/[\u064B-\u0652]/g,'').replace(/[أإآ]/g,'ا');
-function parseYes(t){t=norm2(t);if(/(^|\s)(لا|لاء|no)(\s|$)/.test(t))return false;if(/نعم|ايوه|ايه|اي|ايوا|اه|yes|oui|ياخي|اكيد/.test(t))return true;return null;}
+const norm2=t=>(t||'').toLowerCase().replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[\u064B-\u0652]/g,'').replace(/[أإآ]/g,'ا');
+function parseYes(t){t=norm2(t);if(/(^|\s)(لا|لاء|no)(\s|$)/.test(t))return false;if(/نعم|ايوه|ايه|اي|ايوا|ايوة|واه|باهي|اه|yes|oui|ياخي|اكيد|صح/.test(t))return true;return null;}
 function parsePlayers(t){t=norm2(t);
-  if(/اربع|4|اربعه|اربعة|four/.test(t))return 4;
+  if(/اربع|رباع|4|اربعه|اربعة|four/.test(t))return 4;
   if(/اثنين|اتنين|ثنين|زوز|زوج|اثنان|2|two/.test(t))return 2;return null;}
 async function ask(q,parse){
   for(let n=0;n<3;n++){
@@ -505,7 +504,7 @@ async function ask(q,parse){
       await sayWait('الميكروفون ما خدمش. نكمل بالقيم العادية.');return null;}
     const v=a==null?null:parse(a);
     if(v!==null)return v;
-    q='ما سمعتكش مليح. عاود من فضلك.';
+    q=a==null?'ما سمعتش حاجة. عاود من فضلك.':'سمعت: '+a+'. ما فهمتش. عاود من فضلك.';
   }
   await sayWait('ما فهمتش. نكمل بالقيم العادية.');return null;
 }
