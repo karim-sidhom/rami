@@ -201,7 +201,22 @@ async function readFrame(){
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
     }
   }
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}),wi;
+  var pairs=[],rest=[],used=[];
+  acc.sort(function(p1,p2){return p1.x0-p2.x0});
+  acc.forEach(function(a){
+    if(used.indexOf(a)>=0)return;
+    if(a.t!=='1'){rest.push(a);return;}
+    var partner=null,i2;
+    for(i2=0;i2<bl.list.length;i2++){
+      var o=bl.list[i2];
+      if(o===a||used.indexOf(o)>=0)continue;
+      if(o.x0>=a.x1-2&&o.x0-a.x1<3*a.h&&Math.abs(o.h-a.h)<0.4*a.h&&Math.abs((o.y0+o.y1)/2-a.cy)<0.4*a.h){partner=o;break;}
+    }
+    if(partner){used.push(partner);pairs.push({text:'10',bbox:{x0:a.x0,y0:Math.min(a.y0,partner.y0),x1:partner.x1,y1:Math.max(a.y1,partner.y1)}});}
+    else rest.push(a);
+  });
+  acc=rest;
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
   for(wi=0;wi<words.length;wi++){
     var g=words[wi];
     if(g.text!=='1')continue;
