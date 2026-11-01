@@ -71,7 +71,7 @@ document.getElementById('go').onclick=async function(){
   st.textContent='تحميل...';
   try{
     worker=await Tesseract.createWorker('eng');
-    await worker.setParameters({tessedit_char_whitelist:'123456789',tessedit_pageseg_mode:'10'});
+    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10'});
   }catch(e){st.textContent='خطأ: '+e.message;return;}
   st.textContent='جاهز';
   loop();
@@ -174,15 +174,17 @@ async function readFrame(){
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
-    var img=blobImg(dim,b,bl.lab),ps=['10','13'],pi,t;
-    for(pi=0;pi<2;pi++){
-      await worker.setParameters({tessedit_pageseg_mode:ps[pi]});
+    var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok;
+    for(pi=0;pi<3;pi++){
+      await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(/^\d$/.test(t)&&rr.data.confidence>=50){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
+      if(pi===2){ok=/^[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t='0';}
+      else ok=/^\d$/.test(t)&&rr.data.confidence>=50;
+      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
     }
   }
-  return {dim:dim,words:acc.map(function(x){return {text:x.t,bbox:x}})};
+  return {dim:dim,words:group(acc).filter(function(g){return !/^0+$/.test(g.text)})};
 }
 
 async function loop(){
