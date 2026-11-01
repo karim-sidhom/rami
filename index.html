@@ -71,66 +71,133 @@ document.getElementById('go').onclick=async function(){
   st.textContent='تحميل...';
   try{
     worker=await Tesseract.createWorker('eng');
-    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11'});
+    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10'});
   }catch(e){st.textContent='خطأ: '+e.message;return;}
   st.textContent='جاهز';
   loop();
 };
 
+var cc=document.createElement('canvas'),cx=cc.getContext('2d');
+var mc=document.createElement('canvas'),mx2=mc.getContext('2d');
+
 function prep(){
   var vw=v.videoWidth,vh=v.videoHeight;
   if(!vw)return null;
-  var s=Math.min(1,1600/vw);
-  work.width=Math.round(vw*s);work.height=Math.round(vh*s);
-  wctx.drawImage(v,0,0,work.width,work.height);
-  var d=wctx.getImageData(0,0,work.width,work.height),p=d.data;
-  var hist=new Array(256).fill(0),n=p.length/4,i,g;
-  for(i=0;i<p.length;i+=4){
-    g=Math.round(0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]);
-    p[i]=g;hist[g]++;
-  }
+  var s=Math.min(1,1280/vw),W=Math.round(vw*s),H=Math.round(vh*s);
+  work.width=W;work.height=H;
+  wctx.drawImage(v,0,0,W,H);
+  var p=wctx.getImageData(0,0,W,H).data,N=W*H,gray=new Uint8Array(N),hist=new Array(256).fill(0),i,g;
+  for(i=0;i<N;i++){g=(0.299*p[i*4]+0.587*p[i*4+1]+0.114*p[i*4+2])|0;gray[i]=g;hist[g]++;}
   var sum=0;for(i=0;i<256;i++)sum+=i*hist[i];
   var sB=0,wB=0,mx=0,th=128;
   for(i=0;i<256;i++){
     wB+=hist[i];if(!wB)continue;
-    var wF=n-wB;if(!wF)break;
+    var wF=N-wB;if(!wF)break;
     sB+=i*hist[i];
     var mB=sB/wB,mF=(sum-sB)/wF,bt=wB*wF*(mB-mF)*(mB-mF);
     if(bt>mx){mx=bt;th=i;}
   }
-  for(i=0;i<p.length;i+=4){
-    var o=p[i]>th?255:0;
-    p[i]=p[i+1]=p[i+2]=o;
+  var ink=new Uint8Array(N);
+  for(i=0;i<N;i++)ink[i]=gray[i]<=th?1:0;
+  return {w:W,h:H,ink:ink};
+}
+
+function blobs(d){
+  var W=d.w,H=d.h,ink=d.ink,N=W*H,lab=new Int32Array(N),stack=new Int32Array(N),res=[],id=0,s0;
+  for(s0=0;s0<N;s0++){
+    if(!ink[s0]||lab[s0])continue;
+    id++;var sp=0;stack[sp++]=s0;lab[s0]=id;
+    var x0=W,y0=H,x1=0,y1=0,area=0;
+    while(sp){
+      var q=stack[--sp],qx=q%W,qy=(q-qx)/W;
+      area++;
+      if(qx<x0)x0=qx;if(qx>x1)x1=qx;if(qy<y0)y0=qy;if(qy>y1)y1=qy;
+      if(qx>0&&ink[q-1]&&!lab[q-1]){lab[q-1]=id;stack[sp++]=q-1;}
+      if(qx<W-1&&ink[q+1]&&!lab[q+1]){lab[q+1]=id;stack[sp++]=q+1;}
+      if(qy>0&&ink[q-W]&&!lab[q-W]){lab[q-W]=id;stack[sp++]=q-W;}
+      if(qy<H-1&&ink[q+W]&&!lab[q+W]){lab[q+W]=id;stack[sp++]=q+W;}
+    }
+    var w=x1-x0+1,h=y1-y0+1;
+    if(h<H*0.025||h>H*0.25||w>W*0.2)continue;
+    if(x0===0||y0===0||x1===W-1||y1===H-1)continue;
+    if(h/w<0.8||h/w>8||area<30)continue;
+    res.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h});
   }
-  wctx.putImageData(d,0,0);
-  return {w:work.width,h:work.height};
+  return {list:res,lab:lab};
+}
+
+function blobImg(d,b,lab){
+  mc.width=b.w;mc.height=b.h;
+  var im=mx2.createImageData(b.w,b.h),o=im.data,x,y,k=0;
+  for(y=b.y0;y<b.y1;y++)for(x=b.x0;x<b.x1;x++){
+    var c=lab[y*d.w+x]===b.id?0:255;
+    o[k++]=c;o[k++]=c;o[k++]=c;o[k++]=255;
+  }
+  mx2.putImageData(im,0,0);
+  var sc=100/b.h,tw=Math.max(1,Math.round(b.w*sc));
+  cc.width=tw+60;cc.height=160;
+  cx.fillStyle='#fff';cx.fillRect(0,0,cc.width,cc.height);
+  cx.imageSmoothingEnabled=true;
+  cx.drawImage(mc,30,30,tw,100);
+  return cc;
 }
 
 function mapBox(b,dim){
-  // object-fit:cover mapping
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
   var ox=(sw-dim.w*sc)/2,oy=(sh-dim.h*sc)/2;
   return {x:b.x0*sc+ox,y:b.y0*sc+oy,w:(b.x1-b.x0)*sc,h:(b.y1-b.y0)*sc};
 }
 
+function group(acc){
+  acc.sort(function(a,b){return a.x0-b.x0});
+  var groups=[];
+  acc.forEach(function(a){
+    for(var i=0;i<groups.length;i++){
+      var l=groups[i].items[groups[i].items.length-1];
+      if(Math.abs(l.cy-a.cy)<0.4*a.h&&a.x0-l.x1<a.h&&Math.abs(l.h-a.h)<0.3*a.h){groups[i].items.push(a);return;}
+    }
+    groups.push({items:[a]});
+  });
+  return groups.map(function(g){
+    var it=g.items;
+    return {text:it.map(function(x){return x.t}).join(''),
+      bbox:{x0:Math.min.apply(null,it.map(function(x){return x.x0})),y0:Math.min.apply(null,it.map(function(x){return x.y0})),
+            x1:Math.max.apply(null,it.map(function(x){return x.x1})),y1:Math.max.apply(null,it.map(function(x){return x.y1}))}};
+  });
+}
+
+async function readFrame(){
+  var dim=prep();
+  if(!dim)return null;
+  var bl=blobs(dim),acc=[],k;
+  for(k=0;k<bl.list.length&&k<24;k++){
+    var b=bl.list[k];
+    var img=blobImg(dim,b,bl.lab),ps=['10','13'],pi,t;
+    for(pi=0;pi<2;pi++){
+      await worker.setParameters({tessedit_pageseg_mode:ps[pi]});
+      var rr=await worker.recognize(img);
+      t=(rr.data.text||'').trim();
+      if(/^\d$/.test(t)&&rr.data.confidence>=50){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
+    }
+  }
+  return {dim:dim,words:group(acc)};
+}
+
 async function loop(){
   if(!busy&&worker&&v.readyState>=2){
     busy=true;
     try{
-      var dim=prep();
-      if(dim){
-        st.textContent='...';
-        var r=await worker.recognize(work);
-        var words=(r.data.words||[]).filter(function(w){
-          return /^\d+$/.test(w.text)&&w.confidence>=75;
-        });
+      st.textContent='...';
+      var fr=await readFrame();
+      if(fr){
+        var dim=fr.dim,words=fr.words;
         octx.clearRect(0,0,ov.width,ov.height);
         octx.strokeStyle='#ffd54a';octx.lineWidth=3;
         var found=[],cur={};
         words.forEach(function(w){
           cur[w.text]=(seen[w.text]||0)+1;
-          if(cur[w.text]>=3){
+          if(cur[w.text]>=2){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(w.text)<0)found.push(w.text);
