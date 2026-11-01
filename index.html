@@ -71,7 +71,7 @@ document.getElementById('go').onclick=async function(){
   st.textContent='تحميل...';
   try{
     worker=await Tesseract.createWorker('eng');
-    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10'});
+    await worker.setParameters({tessedit_char_whitelist:'123456789',tessedit_pageseg_mode:'10'});
   }catch(e){st.textContent='خطأ: '+e.message;return;}
   st.textContent='جاهز';
   loop();
@@ -171,6 +171,7 @@ async function readFrame(){
   var dim=prep();
   if(!dim)return null;
   var bl=blobs(dim),acc=[],k;
+  bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
     var img=blobImg(dim,b,bl.lab),ps=['10','13'],pi,t;
@@ -181,7 +182,7 @@ async function readFrame(){
       if(/^\d$/.test(t)&&rr.data.confidence>=50){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
     }
   }
-  return {dim:dim,words:group(acc)};
+  return {dim:dim,words:acc.map(function(x){return {text:x.t,bbox:x}})};
 }
 
 async function loop(){
