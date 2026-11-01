@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>رامي</title>
+<style>
+:root{--bg:#0b3d2e;--panel:#114d3a;--gold:#d4af37;--ink:#f4efe0;--red:#c0392b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Tahoma,sans-serif;padding-bottom:40px}
+header{padding:12px 16px;text-align:center;font-size:22px;color:var(--gold);font-weight:700}
+nav{display:flex;gap:6px;padding:0 10px}
+nav button{flex:1;padding:10px;border:1px solid var(--gold);background:transparent;color:var(--gold);border-radius:8px;font-size:15px;cursor:pointer}
+nav button.on{background:var(--gold);color:#143}
+section{display:none;padding:12px}
+section.on{display:block}
+.panel{background:var(--panel);border-radius:12px;padding:12px;margin-bottom:12px}
+.b{display:inline-block;padding:10px 14px;border:0;border-radius:8px;background:var(--gold);color:#143;font-weight:700;font-size:15px;margin:3px;cursor:pointer}
+.b.alt{background:#2a6b55;color:var(--ink)}
+.b:disabled{opacity:.4}
+.camwrap{position:relative;display:none;width:100%;max-width:420px;margin:0 auto 8px;background:#000;border-radius:8px;overflow:hidden}
+.camwrap video{width:100%;height:100%;display:block;object-fit:cover}
+.frame{position:absolute;border:3px dashed var(--gold);border-radius:8px;pointer-events:none}
+.cambtns{text-align:center}
+.tile{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:62px;margin:2px;background:#fff;border-radius:6px;font-weight:700;line-height:1.1;font-size:17px;color:#111;border:1px solid #bbb;position:relative;cursor:pointer;vertical-align:middle}
+.tile.red{color:var(--red)}
+.tile.sm{width:38px;height:52px;font-size:14px}
+.tile .rep{position:absolute;bottom:1px;font-size:10px;color:#555}
+.row{margin:6px 0}
+.meld{background:#0d4232;border-radius:8px;padding:6px;margin:6px 0}
+.ok{color:#7dffa6;font-weight:700}
+.ko{color:#ff9a8a;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(13,1fr);gap:3px}
+.grid .tile{width:100%;height:46px;margin:0;font-size:12px}
+.grid .tile.on{outline:3px solid var(--gold)}
+.grid .tile .n{position:absolute;top:0;left:2px;font-size:10px;color:#080}
+.reco img{width:70px;border-radius:6px;vertical-align:middle;margin-left:8px}
+.cand{display:inline-block;text-align:center;font-size:12px;margin:0 4px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:8px 14px;border-radius:20px;display:none;z-index:9}
+label.mode{margin-left:14px}
+ul{padding-right:20px;line-height:1.8}
+h3{color:var(--gold);margin:4px 0 8px}
+</style>
+</head>
+<body>
+<header>♠ ♥ رامي تونسي ♦ ♣</header>
+<nav>
+<button data-t="hand" class="on">اليد</button>
+<button data-t="calib">تسجيل الأوراق</button>
+<button data-t="rules">القواعد</button>
+</nav>
+
+<section id="hand" class="on">
+<div class="panel">
+<label class="mode"><input type="radio" name="mode" value="51" checked> فردي (51)</label>
+<label class="mode"><input type="radio" name="mode" value="61"> زوجي (61)</label>
+</div>
+<div class="panel">
+<div id="cam1"></div>
+<div id="reco" class="reco"></div>
+</div>
+<div class="panel">
+<h3>يدك (<span id="cnt">0</span>/15)</h3>
+<div id="handTiles"></div>
+<div class="row">
+<button class="b alt" id="togglePick">+ إضافة يدوية</button>
+<button class="b alt" id="clearHand">مسح اليد</button>
+</div>
+<div id="pickBox" style="display:none"></div>
+</div>
+<div class="panel" id="analysis"></div>
+</section>
+
+<section id="calib">
+<div class="panel">
+<div>صوّر كل ورقة مرّة وحدة داخل الإطار (الورقة عمودية). الجوكر ورقة وحدة.</div>
+<div class="row"><b>الورقة الحالية:</b> <span id="tgtTile"></span> — مسجّلة: <span id="calibCount">0</span>/53</div>
+<div id="cam2"></div>
+<div class="row"><button class="b alt" id="delTgt">مسح صور هذه الورقة</button></div>
+</div>
+<div class="panel"><div id="calibGrid" class="grid"></div></div>
+</section>
+
+<section id="rules">
+<div class="panel">
+<h3>القواعد</h3>
+<ul>
+<li>اللعبة: 2 جيو من 52 ورقة + 4 جوكر = 108 ورقة.</li>
+<li>كل لاعب 14 ورقة، واللّي يبدأ 15 ويرمي ورقة.</li>
+<li>الفتح: 51 نقطة فردي، 61 نقطة زوجي.</li>
+<li>القيم: 2 إلى 9 قيمتها، 10 و J و Q و K = 10.</li>
+<li>الآس = 1 في A-2-3، وفي بقية الحالات = 10 (Q-K-A = 10).</li>
+<li>الجوكر ياخذ قيمة الورقة اللّي يعوّضها.</li>
+<li>التتابع: 3 أوراق على الأقل من نفس النوع: A 2 3 4 5 6 7 8 9 10 J Q K A.</li>
+<li>الكاري: 3 أو 4 أوراق من نفس القيمة وأنواع مختلفة.</li>
+</ul>
+</div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script id="rules-js">
+const SUITS=['S','H','D','C'];
+const SYM={S:'♠',H:'♥',D:'♦',C:'♣'};
+const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const ALL_IDS=[];
+for(const s of SUITS)for(const r of RANKS)ALL_IDS.push(s+r);
+ALL_IDS.push('JK');
+function mkCard(id){
+  if(id==='JK')return {id:'JK',joker:true};
+  const s=id[0],r=id.slice(1);
+  return {id,s,r,rn:RANKS.indexOf(r)+1};
+}
+function posVal(p){if(p===1)return 1;if(p<=9)return p;return 10;}
+function posLab(p){return (p===1||p===14)?'A':RANKS[p-1];}
+function popc(x){let c=0;while(x){c+=x&1;x>>=1;}return c;}
+
+function evalSet(N,jokers){
+  const J=jokers.length,size=N.length+J;
+  if(size<3||size>4)return null;
+  const rn=N[0].rn;
+  if(N.some(c=>c.rn!==rn))return null;
+  if(new Set(N.map(c=>c.s)).size!==N.length)return null;
+  const v=rn===1?10:Math.min(rn,10);
+  const items=N.map(c=>({card:c})).concat(jokers.map(j=>({card:j,rep:RANKS[rn-1]})));
+  return {type:'set',pts:v*size,items};
+}
+function evalSeq(N,jokers){
+  if(new Set(N.map(c=>c.s)).size!==1)return null;
+  const J=jokers.length,size=N.length+J;
+  if(size<3||size>14)return null;
+  let best=null;
+  for(let s=1;s+size-1<=14;s++){
+    const e=s+size-1,slot=new Array(15).fill(null);
+    let ok=true;const aces=[];
+    for(const c of N){
+      if(c.rn===1){aces.push(c);continue;}
+      if(c.rn<s||c.rn>e||slot[c.rn]){ok=false;break;}
+      slot[c.rn]=c;
+    }
+    if(!ok||aces.length>2)continue;
+    let placed=false;
+    if(aces.length===0)placed=true;
+    else if(aces.length===1){
+      for(const p of [1,14]){if(p>=s&&p<=e&&!slot[p]){slot[p]=aces[0];placed=true;break;}}
+    }else if(s===1&&e===14){slot[1]=aces[0];slot[14]=aces[1];placed=true;}
+    if(!placed)continue;
+    let pts=0,ji=0;const items=[];
+    for(let p=s;p<=e;p++){
+      pts+=posVal(p);
+      if(slot[p])items.push({card:slot[p]});
+      else items.push({card:jokers[ji++],rep:posLab(p)});
+    }
+    if(!best||pts>best.pts)best={type:'seq',pts,items};
+  }
+  return best;
+}
+function evalMeld(cards){
+  const N=cards.filter(c=>!c.joker),jokers=cards.filter(c=>c.joker);
+  if(!N.length||cards.length<3)return null;
+  const a=evalSet(N,jokers),b=evalSeq(N,jokers);
+  if(a&&b)return b.pts>a.pts?b:a;
+  return a||b;
+}
+function solve(hand){
+  const n=hand.length,melds=[];
+  for(let m=1;m<(1<<n);m++){
+    const k=popc(m);if(k<3)continue;
+    const cs=[];for(let i=0;i<n;i++)if(m>>i&1)cs.push(hand[i]);
+    const r=evalMeld(cs);
+    if(r)melds.push({mask:m,pts:r.pts,k,r});
+  }
+  const by=Array.from({length:n},()=>[]);
+  for(const m of melds){let i=0;while(!(m.mask>>i&1))i++;by[i].push(m);}
+  const full=(1<<n)-1,memo=new Map(),choice=new Map();
+  function f(mask){
+    if(mask===full)return 0;
+    if(memo.has(mask))return memo.get(mask);
+    let i=0;while(mask>>i&1)i++;
+    let best=f(mask|(1<<i)),ch=null;
+    for(const m of by[i]){
+      if(m.mask&mask)continue;
+      const v=m.pts*100+m.k+f(mask|m.mask);
+      if(v>best){best=v;ch=m;}
+    }
+    memo.set(mask,best);choice.set(mask,ch);return best;
+  }
+  f(0);
+  let mask=0,total=0;const chosen=[];
+  while(mask!==full){
+    let i=0;while(mask>>i&1)i++;
+    const ch=choice.get(mask);
+    if(ch){chosen.push(ch.r);total+=ch.pts;mask|=ch.mask;}
+    else mask|=(1<<i);
+  }
+  const used=new Set();
+  let m2=0;
+  // leftover = cards not in any chosen meld
+  const inMeld=new Set();
+  for(const r of chosen)for(const it of r.items)inMeld.add(it.card);
+  const left=hand.filter(c=>!inMeld.has(c));
+  return {total,melds:chosen,left};
+}
+</script>
+
+<script>
+const $=s=>document.querySelector(s);
+const REF_KEY='rami_refs_v1';
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',2200);}
+
+/* ---------- tiles ---------- */
+function tileHTML(c,rep,cls,extra){
+  cls=cls||'';extra=extra||'';
+  if(c.joker)return `<span class="tile ${cls}" ${extra} style="color:#6a1b9a">🃏${rep?`<span class="rep">${rep}</span>`:''}</span>`;
+  const red=(c.s==='H'||c.s==='D');
+  return `<span class="tile ${red?'red':''} ${cls}" ${extra}>${c.r}<br>${SYM[c.s]}</span>`;
+}
+
+/* ---------- descriptors ---------- */
+const CW=80,CH=112,DW=40,DH=56;
+const dc=document.createElement('canvas');dc.width=DW;dc.height=DH;
+const dx=dc.getContext('2d',{willReadFrequently:true});
+function norm(a){
+  let m=0;for(const v of a)m+=v;m/=a.length;
+  let s=0;for(let i=0;i<a.length;i++){a[i]-=m;s+=a[i]*a[i];}
+  s=Math.sqrt(s)||1;for(let i=0;i<a.length;i++)a[i]/=s;return a;
+}
+function desc(cv){
+  dx.imageSmoothingEnabled=true;dx.imageSmoothingQuality='high';
+  dx.clearRect(0,0,DW,DH);dx.drawImage(cv,0,0,DW,DH);
+  const d=dx.getImageData(0,0,DW,DH).data,n=DW*DH;
+  const g=new Float32Array(n),r=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const R=d[4*i],G=d[4*i+1],B=d[4*i+2];
+    g[i]=.299*R+.587*G+.114*B;r[i]=R-(G+B)/2;
+  }
+  return {g:norm(g),r:norm(r)};
+}
+function dot(a,b){let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s;}
+function rot180(cv){
+  const c=document.createElement('canvas');c.width=cv.width;c.height=cv.height;
+  const x=c.getContext('2d');x.translate(c.width,c.height);x.rotate(Math.PI);x.drawImage(cv,0,0);return c;
+}
+
+/* ---------- references ---------- */
+let refs={};try{refs=JSON.parse(localStorage.getItem(REF_KEY)||'{}');}catch(e){refs={};}
+let descs={};
+function saveRefs(){try{localStorage.setItem(REF_KEY,JSON.stringify(refs));}catch(e){toast('الذاكرة ممتلئة');}}
+function loadImg(url){return new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=url;});}
+async function imgToDesc(url){
+  const i=await loadImg(url);if(!i)return null;
+  const c=document.createElement('canvas');c.width=CW;c.height=CH;
+  c.getContext('2d').drawImage(i,0,0,CW,CH);return desc(c);
+}
+async function loadDescs(){
+  descs={};
+  for(const id in refs){
+    const arr=[];
+    for(const u of refs[id]){const d=await imgToDesc(u);if(d)arr.push(d);}
+    if(arr.length)descs[id]=arr;
+  }
+}
+const descReady=loadDescs();
+
+function recognize(cv){
+  const q=[desc(cv),desc(rot180(cv))],out=[];
+  for(const id in descs){
+    let best=-2;
+    for(const d of descs[id])for(const qq of q){
+      const s=(dot(qq.g,d.g)+dot(qq.r,d.r))/2;if(s>best)best=s;
+    }
+    out.push([id,best]);
+  }
+  out.sort((a,b)=>b[1]-a[1]);return out.slice(0,3);
+}
+
+/* ---------- camera ---------- */
+function cropRect(W,H){
+  let h=H*0.9,w=h*5/7;
+  if(w>W*0.9){w=W*0.9;h=w*7/5;}
+  return {x:(W-w)/2,y:(H-h)/2,w,h};
+}
+function shotCanvas(src,W,H){
+  const r=cropRect(W,H),c=document.createElement('canvas');c.width=CW;c.height=CH;
+  const x=c.getContext('2d');x.imageSmoothingQuality='high';
+  x.drawImage(src,r.x,r.y,r.w,r.h,0,0,CW,CH);return c;
+}
+function Cam(root,onShot){
+  root.innerHTML=`<div class="camwrap"><video playsinline muted></video><div class="frame"></div></div>
+  <div class="cambtns"><button class="b st">📷 فتح الكاميرا</button><button class="b shot" disabled>⭕ التقاط</button>
+  <label class="b alt">📁 صورة<input type="file" accept="image/*" capture="environment" hidden></label></div>`;
+  const wrap=root.querySelector('.camwrap'),vid=root.querySelector('video'),fr=root.querySelector('.frame');
+  const st=root.querySelector('.st'),shot=root.querySelector('.shot'),fi=root.querySelector('input');
+  let stream=null;
+  function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}wrap.style.display='none';shot.disabled=true;st.textContent='📷 فتح الكاميرا';}
+  st.onclick=async()=>{
+    if(stream){stop();return;}
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+      vid.srcObject=stream;await vid.play();
+      wrap.style.display='block';st.textContent='⏹ إيقاف';shot.disabled=false;
+      const set=()=>{
+        const W=vid.videoWidth,H=vid.videoHeight;if(!W)return;
+        wrap.style.aspectRatio=W+'/'+H;
+        const r=cropRect(W,H);
+        fr.style.left=(r.x/W*100)+'%';fr.style.top=(r.y/H*100)+'%';
+        fr.style.width=(r.w/W*100)+'%';fr.style.height=(r.h/H*100)+'%';
+      };
+      set();vid.onloadedmetadata=set;vid.onresize=set;
+    }catch(e){toast('الكاميرا غير متاحة');}
+  };
+  shot.onclick=()=>{if(!vid.videoWidth)return;onShot(shotCanvas(vid,vid.videoWidth,vid.videoHeight));};
+  fi.onchange=async()=>{
+    const f=fi.files[0];fi.value='';if(!f)return;
+    const u=URL.createObjectURL(f),i=await loadImg(u);URL.revokeObjectURL(u);
+    if(i)onShot(shotCanvas(i,i.naturalWidth,i.naturalHeight));
+  };
+  return {stop};
+}
+
+/* ---------- hand ---------- */
+let hand=[];
+function cntOf(id){return hand.filter(c=>c.id===id).length;}
+function addCard(id){
+  if(hand.length>=15){toast('15 ورقة كحد أقصى');return false;}
+  if(cntOf(id)>=(id==='JK'?4:2)){toast('هذه الورقة موجودة بالعدد الأقصى');return false;}
+  hand.push(mkCard(id));renderHand();return true;
+}
+function sortHand(){
+  hand.sort((a,b)=>{
+    if(a.joker)return 1;if(b.joker)return -1;
+    return SUITS.indexOf(a.s)-SUITS.indexOf(b.s)||a.rn-b.rn;
+  });
+}
+function renderHand(){
+  sortHand();
+  $('#cnt').textContent=hand.length;
+  $('#handTiles').innerHTML=hand.map((c,i)=>tileHTML(c,'','',`data-i="${i}"`)).join('')||'<span>—</span>';
+  document.querySelectorAll('#handTiles .tile').forEach(t=>t.onclick=()=>{hand.splice(+t.dataset.i,1);renderHand();});
+  analyze();
+}
+function threshold(){return +document.querySelector('input[name=mode]:checked').value;}
+function analyze(){
+  const box=$('#analysis');
+  if(hand.length<3){box.innerHTML='<h3>التحليل</h3><div>زيد 3 أوراق على الأقل.</div>';return;}
+  const r=solve(hand),th=threshold(),can=r.total>=th;
+  let h=`<h3>التحليل</h3><div>المجموع: <b>${r.total}</b> / ${th} — <span class="${can?'ok':'ko'}">${can?'✅ تنجم تفتح':'❌ ما تنجمش تفتح'}</span></div>`;
+  r.melds.forEach(m=>{
+    h+=`<div class="meld">${m.type==='seq'?'تتابع':'كاري'} — ${m.pts} نقطة<br>`+m.items.map(it=>tileHTML(it.card,it.rep,'sm')).join('')+'</div>';
+  });
+  if(r.left.length)h+=`<div class="meld">أوراق خارج التركيبات<br>`+r.left.map(c=>tileHTML(c,'','sm')).join('')+'</div>';
+  box.innerHTML=h;
+}
+document.querySelectorAll('input[name=mode]').forEach(e=>e.onchange=analyze);
+$('#clearHand').onclick=()=>{hand=[];renderHand();};
+
+/* picker */
+function buildPicker(el,onPick,markFn){
+  let h='';
+  for(const s of SUITS)for(const r of RANKS){
+    const id=s+r,c=mkCard(id),red=(s==='H'||s==='D');
+    h+=`<span class="tile ${red?'red':''} ${markFn&&markFn(id)?'on':''}" data-id="${id}">${r}<br>${SYM[s]}${markFn&&markFn.n?markFn.n(id):''}</span>`;
+  }
+  h+=`<span class="tile" data-id="JK" style="color:#6a1b9a;grid-column:span 2">🃏</span>`;
+  el.innerHTML=h;
+  el.querySelectorAll('.tile').forEach(t=>t.onclick=()=>onPick(t.dataset.id));
+}
+$('#togglePick').onclick=()=>{
+  const p=$('#pickBox');
+  if(p.style.display==='none'){p.style.display='block';p.className='grid';buildPicker(p,id=>addCard(id));}
+  else p.style.display='none';
+};
+
+/* recognition result */
+let cam1=Cam($('#cam1'),async cv=>{
+  await descReady;
+  const box=$('#reco');
+  if(!Object.keys(descs).length){box.innerHTML='<div class="ko">سجّل الأوراق أوّلا من تبويب «تسجيل الأوراق».</div>';return;}
+  const top=recognize(cv),url=cv.toDataURL('image/jpeg',.7);
+  box.innerHTML=`<img src="${url}">`+top.map(([id,s])=>`<span class="cand" data-id="${id}">${tileHTML(mkCard(id),'','sm')}<br>${Math.round(Math.max(0,s)*100)}%</span>`).join('');
+  box.querySelectorAll('.cand').forEach(c=>c.onclick=()=>{if(addCard(c.dataset.id))box.innerHTML='';});
+});
+
+/* ---------- calibration ---------- */
+let target='SA';
+function firstMissing(from){
+  const n=ALL_IDS.length,start=from?ALL_IDS.indexOf(from)+1:0;
+  for(let k=0;k<n;k++){const id=ALL_IDS[(start+k)%n];if(!(refs[id]&&refs[id].length))return id;}
+  return null;
+}
+function renderCalib(){
+  $('#tgtTile').innerHTML=tileHTML(mkCard(target),'','sm');
+  $('#calibCount').textContent=ALL_IDS.filter(id=>refs[id]&&refs[id].length).length;
+  const g=$('#calibGrid');
+  let h='';
+  for(const id of ALL_IDS){
+    const c=mkCard(id),n=(refs[id]||[]).length,red=(c.s==='H'||c.s==='D');
+    h+=`<span class="tile ${red?'red':''} ${id===target?'on':''}" data-id="${id}" ${id==='JK'?'style="color:#6a1b9a;grid-column:span 2"':''}>${c.joker?'🃏':c.r+'<br>'+SYM[c.s]}${n?`<span class="n">✓${n}</span>`:''}</span>`;
+  }
+  g.innerHTML=h;
+  g.querySelectorAll('.tile').forEach(t=>t.onclick=()=>{target=t.dataset.id;renderCalib();});
+}
+let cam2=Cam($('#cam2'),cv=>{
+  (refs[target]=refs[target]||[]).push(cv.toDataURL('image/jpeg',.8));
+  saveRefs();
+  descs[target]=(descs[target]||[]).concat([desc(cv)]);
+  const nx=firstMissing(target);
+  if(nx){target=nx;toast('تسجّلت ✓');}else toast('كل الأوراق مسجّلة ✓');
+  renderCalib();
+});
+$('#delTgt').onclick=()=>{delete refs[target];delete descs[target];saveRefs();renderCalib();};
+target=firstMissing(null)||'SA';
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t));
+  cam1.stop();cam2.stop();
+});
+renderCalib();renderHand();
+</script>
+</body>
+</html>
