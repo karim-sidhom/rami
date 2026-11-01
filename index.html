@@ -120,7 +120,7 @@ function blobs(d){
     var w=x1-x0+1,h=y1-y0+1;
     if(h<H*0.025||h>H*0.25||w>W*0.2)continue;
     if(x0===0||y0===0||x1===W-1||y1===H-1)continue;
-    if(h/w<0.8||h/w>8||area<30)continue;
+    if(h/w<0.5||h/w>8||area<30)continue;
     res.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h});
   }
   return {list:res,lab:lab};
@@ -179,8 +179,8 @@ async function readFrame(){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(pi===2){ok=/^[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t='0';}
-      else ok=/^\d$/.test(t)&&rr.data.confidence>=50;
+      if(pi===2){ok=/^1?[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
     }
   }
