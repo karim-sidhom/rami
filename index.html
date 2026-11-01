@@ -780,6 +780,44 @@ function centerSuit(d,red){
   sols.sort((a,b)=>a-b);const m=sols[sols.length>>1];
   return red?(m>0.25?'H':'D'):(m>0.875?'S':'C');
 }
+function recognizeFull(cv){
+  const q=[desc(cv),desc(rot180(cv))],out=[];
+  for(const id in descs){let best=-2;
+    for(const d of descs[id])for(const qq of q){const v=(dot(qq.g,d.g)+dot(qq.r,d.r))/2;if(v>best)best=v;}
+    out.push([id,best]);}
+  out.sort((a,b)=>b[1]-a[1]);return out;
+}
+/* nombre de gros symboles au centre + couleur dominante */
+function centerCount(d){
+  const n=PW*PH,L=new Float32Array(n);for(let i=0;i<n;i++)L[i]=(d[4*i]+d[4*i+1]+d[4*i+2])/3;
+  const srt=Float32Array.from(L).sort(),paper=srt[Math.floor(n*.9)];
+  const x0=Math.round(PW*.17),x1=Math.round(PW*.83),y0=Math.round(PH*.1),y1=Math.round(PH*.9);
+  const ink=new Uint8Array(n);let red=0,dark=0,tot=0,nonw=0;
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const i=y*PW+x,rd=d[4*i]-(d[4*i+1]+d[4*i+2])/2;tot++;
+    {const R=d[4*i],G=d[4*i+1],B=d[4*i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B);if(L[i]<paper*.75||(mx&&(mx-mn)/mx>.35))nonw++;}
+    if(rd>=40&&L[i]<paper*.9){ink[i]=1;red++;}else if(L[i]<paper*.55&&rd<30){ink[i]=1;dark++;}}
+  const lab=new Uint8Array(n),comps=[],st=[];
+  for(let s0=0;s0<n;s0++){if(!ink[s0]||lab[s0])continue;const pts=[];st.push(s0);lab[s0]=1;
+    while(st.length){const k=st.pop();pts.push(k);const px=k%PW,py=(k/PW)|0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const qx=px+dx,qy=py+dy;if(qx<x0||qx>=x1||qy<y0||qy>=y1)continue;const j=qy*PW+qx;if(ink[j]&&!lab[j]){lab[j]=1;st.push(j);}}}
+    let mnx=1e9,mxx=-1,mny=1e9,mxy=-1;for(const k of pts){const px=k%PW,py=(k/PW)|0;if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;}
+    if(pts.length>=250&&mxx-mnx+1<=48&&mxy-mny+1<=52)comps.push(pts.length);}
+  if(nonw/tot>.5)return null;   /* figure ou joker : pas de symboles à compter */
+  comps.sort((a,b)=>b-a);if(!comps.length)return null;
+  const cand=comps.filter(a=>a>=comps[0]*.3).sort((a,b)=>a-b),ref=cand[cand.length>>1];
+  let cnt=0;for(const a of cand)cnt+=Math.max(1,Math.round(a/ref));
+  return {count:cnt,red:red>dark};
+}
+/* lecture sans le coin : couleur + forme des gros symboles + nombre, départagé par la comparaison d'image entre ces seules candidates */
+function readByCenter(cv){
+  const d=cardPixels(cv),cc=centerCount(d);if(!cc||cc.count<1||cc.count>11)return null;
+  const suit=centerSuit(d,cc.red);if(!suit)return null;
+  const all=recognizeFull(cv),sc={};for(const [id,v] of all)sc[id]=v;
+  let best=null,bv=-9;
+  for(const r of [cc.count-1,cc.count,cc.count+1]){if(r<1||r>10)continue;const id=suit+(r===1?'A':r);if(sc[id]===undefined)continue;
+    const v=sc[id]+(r===cc.count?0.15:0);if(v>bv){bv=v;best=id;}}
+  return best?{id:best,conf:sc[best],count:cc.count,suit}:null;
+}
 function readCorner(cv){
   const d0=cardPixels(cv),d1=cardPixels(rot180(cv));
   const lum=a=>{const v=[];for(let i=0;i<PW*PH;i+=7)v.push((a[4*i]+a[4*i+1]+a[4*i+2])/3);v.sort((x,y)=>x-y);return v[Math.floor(v.length*.9)]||200;};
@@ -834,9 +872,10 @@ function undo(){
 function process(cv){
   if(!setupDone)return;
   let t=null,src='';
-  if(cv){const rc=readCorner(cv);
-    if(rc){t=[rc.id,rc.conf];src='coin';}
-    else src='illisible';}
+  if(cv){const rb=readByCenter(cv);
+    if(rb){t=[rb.id,rb.conf];src='centre';}
+    else{const rc=readCorner(cv);
+      if(rc){t=[rc.id,rc.conf];src='coin';}else src='illisible';}}
   $('#liveDbg').textContent=t?`${t[0]} (${src})`:(cv?'coin illisible':'—');
   if(t){
     absent=0;
@@ -886,7 +925,7 @@ if(!/[?&]edit/.test(location.search)){
   document.querySelectorAll('section').forEach(x=>x.classList.toggle('on',x.id==='live'));
 }
 render();
-window.LIVE={readCorner,findCard,parseYes,parsePlayers,setup,stop,accept,process,undo,analysisText,bestDiscard,state:()=>({table,log,dealDone})};
+window.LIVE={readByCenter,readCorner,findCard,parseYes,parsePlayers,setup,stop,accept,process,undo,analysisText,bestDiscard,state:()=>({table,log,dealDone})};
 })();
 </script>
 </body>
