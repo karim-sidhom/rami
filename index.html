@@ -686,7 +686,7 @@ function readCornerOne(d,paper){
     let mnx=1e9,mxx=-1,mny=1e9,mxy=-1,rd=0;
     for(const k of pts){const px=k%rw,py=(k/rw)|0;if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;if(redK[k])rd++;}
     const bw=mxx-mnx+1,bh=mxy-mny+1;
-    if(pts.length>=6&&bh>=4&&bh<=16&&bw<=14&&mnx>0&&mxx<rw-1)small.push({mnx,bw,cy:(mny+mxy)/2});
+    if(pts.length>=12&&bh>=7&&bh<=14&&bw>=3&&bw<=14&&mnx>0&&mxx<rw-1)small.push({mnx,bw,bh,cy:(mny+mxy)/2});
     if(pts.length<20||bw>32||bh>40||bh<6||mxx>=rw-1||mxy>=rh-1)continue;  /* coupé par la zone = symbole du centre */
     comps.push({pts,mnx,mny,bw,bh,cy:(mny+mxy)/2,red:rd>pts.length/2});
   }
@@ -698,7 +698,8 @@ function readCornerOne(d,paper){
     const col=small.filter(c=>Math.abs(c.mnx+c.bw/2-mx)<9);
     let rows=0,last=-99;
     for(const c of col)if(c.cy-last>=5){rows++;last=c.cy;}   /* une lettre cassée en 2 morceaux compte une fois */
-    if(rows>=4)return {id:'JK',conf:1,rv:1,sv:1,rank:'JK',suit:'J'};
+    const hs=col.map(c=>c.bh),hr=Math.max(...hs)-Math.min(...hs);
+    if(rows>=4&&hr<=4)return {id:'JK',conf:1,rv:1,sv:1,rank:'JK',suit:'J'};
   }
   if(comps.length<2)return null;
   const pip=comps[comps.length-1],rank=comps.slice(0,-1);
@@ -736,13 +737,6 @@ function readCorner(cv){
   const r0=readCornerOne(d0,lum(d0)),r1=readCornerOne(d1,lum(d1));
   if(r0&&(!r1||r0.conf>=r1.conf))return r0;
   if(r1)return r1;
-  /* ni chiffre ni signe lisibles dans le coin + centre très coloré = joker (il n'a pas de numéro) */
-  const L=[];for(let y=Math.round(PH*.1);y<PH*.9;y+=2)for(let x=Math.round(PW*.2);x<PW*.8;x+=2){const i=4*(y*PW+x);L.push(d0[i]*.299+d0[i+1]*.587+d0[i+2]*.114);}
-  const sorted=L.slice().sort((a,b)=>a-b),paper=sorted[Math.floor(sorted.length*.9)]||200;
-  let nonw=0,k=0;
-  for(let y=Math.round(PH*.1);y<PH*.9;y+=2)for(let x=Math.round(PW*.2);x<PW*.8;x+=2){const i=4*(y*PW+x),R=d0[i],G=d0[i+1],B=d0[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B);
-    if(L[k]<paper*.75||(mx&&(mx-mn)/mx>.35))nonw++;k++;}
-  if(nonw/L.length>.5)return {id:'JK',conf:.6,rv:.6,sv:.6,rank:'JK',suit:'J'};
   return null;
 }
 
