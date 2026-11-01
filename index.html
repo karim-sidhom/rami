@@ -306,6 +306,12 @@ function shotCanvas(src,W,H){
   const x=c.getContext('2d');x.imageSmoothingQuality='high';
   x.drawImage(src,r.x,r.y,r.w,r.h,0,0,CW,CH);return c;
 }
+/* capture : si une carte est détectée dans l'image elle est redressée, sinon recadrage fixe d'origine */
+function smartShot(src,W,H){
+  try{const c=window.LIVE&&LIVE.findCard(src,W,H);
+    if(c){const o=document.createElement('canvas');o.width=CW;o.height=CH;o.getContext('2d').drawImage(c,0,0,CW,CH);return o;}}catch(e){}
+  return shotCanvas(src,W,H);
+}
 function Cam(root,onShot){
   root.innerHTML=`<div class="camwrap"><video playsinline muted></video><div class="frame"></div></div>
   <div class="cambtns"><button class="b st">📷 فتح الكاميرا</button><button class="b shot" disabled>⭕ التقاط</button>
@@ -330,11 +336,11 @@ function Cam(root,onShot){
       set();vid.onloadedmetadata=set;vid.onresize=set;
     }catch(e){toast('الكاميرا غير متاحة');}
   };
-  shot.onclick=()=>{if(!vid.videoWidth)return;onShot(shotCanvas(vid,vid.videoWidth,vid.videoHeight));};
+  shot.onclick=()=>{if(!vid.videoWidth)return;onShot(smartShot(vid,vid.videoWidth,vid.videoHeight));};
   fi.onchange=async()=>{
     const f=fi.files[0];fi.value='';if(!f)return;
     const u=URL.createObjectURL(f),i=await loadImg(u);URL.revokeObjectURL(u);
-    if(i)onShot(shotCanvas(i,i.naturalWidth,i.naturalHeight));
+    if(i)onShot(smartShot(i,i.naturalWidth,i.naturalHeight));
   };
   return {stop};
 }
@@ -558,6 +564,188 @@ function bestDiscard(){
   return best&&best.c;
 }
 
+/* ---------- détection de la carte dans l'image + redressement ---------- */
+const PW=160,PH=224;
+const GW=160,GH=120,gc=document.createElement('canvas');gc.width=GW;gc.height=GH;
+const gx=gc.getContext('2d',{willReadFrequently:true});
+function findCard(src,W,H){
+  gx.drawImage(src,0,0,GW,GH);
+  const d=gx.getImageData(0,0,GW,GH).data,n=GW*GH,L=new Uint8Array(n),Sat=new Uint8Array(n);
+  const hist=new Array(256).fill(0);
+  for(let i=0;i<n;i++){const R=d[4*i],G=d[4*i+1],B=d[4*i+2];
+    const mx=Math.max(R,G,B),mn=Math.min(R,G,B);L[i]=(R+G+B)/3;Sat[i]=mx?255*(mx-mn)/mx:0;hist[L[i]]++;}
+  /* Otsu */
+  let sum=0;for(let t=0;t<256;t++)sum+=t*hist[t];
+  let wB=0,sB=0,best=-1,th=128;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=n-wB;if(!wF)break;sB+=t*hist[t];
+    const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>best){best=v;th=t;}}
+  let m=new Uint8Array(n);
+  for(let i=0;i<n;i++)m[i]=(L[i]>th&&Sat[i]<110)?1:0;
+  /* fermeture (dilatation puis érosion 3x3) pour boucher les dessins */
+  const dil=(a)=>{const o=new Uint8Array(n);for(let y=1;y<GH-1;y++)for(let x=1;x<GW-1;x++){let v=0;
+    for(let dy=-1;dy<=1&&!v;dy++)for(let dx=-1;dx<=1;dx++)if(a[(y+dy)*GW+x+dx]){v=1;break;}o[y*GW+x]=v;}return o;};
+  const ero=(a)=>{const o=new Uint8Array(n);for(let y=1;y<GH-1;y++)for(let x=1;x<GW-1;x++){let v=1;
+    for(let dy=-1;dy<=1&&v;dy++)for(let dx=-1;dx<=1;dx++)if(!a[(y+dy)*GW+x+dx]){v=0;break;}o[y*GW+x]=v;}return o;};
+  m=ero(dil(dil(m)));
+  /* plus grande composante */
+  const lab=new Int32Array(n),stack=[];let bestC=null,bestN=0,id=0;
+  for(let i=0;i<n;i++){
+    if(!m[i]||lab[i])continue;id++;const pts=[];stack.push(i);lab[i]=id;
+    while(stack.length){const k=stack.pop();pts.push(k);const x=k%GW,y=(k/GW)|0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const xx=x+dx,yy=y+dy;
+        if(xx<0||yy<0||xx>=GW||yy>=GH)continue;const j=yy*GW+xx;if(m[j]&&!lab[j]){lab[j]=id;stack.push(j);}}}
+    if(pts.length>bestN){bestN=pts.length;bestC=pts;}
+  }
+  if(!bestC||bestN<n*0.06||bestN>n*0.92)return null;
+  /* axes principaux */
+  let cx=0,cy=0;for(const k of bestC){cx+=k%GW;cy+=(k/GW)|0;}cx/=bestN;cy/=bestN;
+  let sxx=0,syy=0,sxy=0;
+  for(const k of bestC){const x=(k%GW)-cx,y=((k/GW)|0)-cy;sxx+=x*x;syy+=y*y;sxy+=x*y;}
+  const ang=0.5*Math.atan2(2*sxy,sxx-syy);
+  let ux=Math.cos(ang),uy=Math.sin(ang),vx=-uy,vy=ux;      /* u = axe long */
+  const pu=[],pv=[];
+  for(const k of bestC){const x=(k%GW)-cx,y=((k/GW)|0)-cy;pu.push(x*ux+y*uy);pv.push(x*vx+y*vy);}
+  const q=(a,f)=>{const b=Float32Array.from(a).sort();return b[Math.floor(f*(b.length-1))];};
+  const u0=q(pu,.02),u1=q(pu,.98),v0=q(pv,.02),v1=q(pv,.98);
+  const lu=u1-u0,lv=v1-v0;
+  if(lv<=0||lu<=0)return null;
+  const asp=Math.max(lu,lv)/Math.min(lu,lv),fill=bestN/(lu*lv);
+  if(asp<1.15||asp>2.0||fill<0.6)return null;
+  /* axe long -> vertical */
+  let a1x=ux,a1y=uy,a2x=vx,a2y=vy,h0=u0,h1=u1,w0=v0,w1=v1;
+  if(lv>lu){a1x=vx;a1y=vy;a2x=ux;a2y=uy;h0=v0;h1=v1;w0=u0;w1=u1;}
+  if(a2x*a1y-a2y*a1x<0){a2x=-a2x;a2y=-a2y;const t=w0;w0=-w1;w1=-t;}  /* évite l'image en miroir */
+  const sc=W/GW,out=document.createElement('canvas');out.width=PW;out.height=PH;
+  const o=out.getContext('2d');
+  const ex=w1-w0,ey=h1-h0,Ox=cx+a2x*w0+a1x*h0,Oy=cy+a2y*w0+a1y*h0;
+  const m11=a2x*ex/PW,m12=a1x*ey/PH,m21=a2y*ex/PW,m22=a1y*ey/PH,det=m11*m22-m12*m21;
+  const P=m22/det,Q=-m12/det,R=-m21/det,S=m11/det;
+  o.imageSmoothingQuality='high';
+  o.setTransform(P/sc,R/sc,Q/sc,S/sc,-(P*Ox+Q*Oy),-(R*Ox+S*Oy));
+  o.drawImage(src,0,0,W,H);
+  o.setTransform(1,0,0,1,0,0);
+  return out;
+}
+
+/* ---------- lecture du coin : chiffre/lettre + signe (couleur puis forme) ---------- */
+const GNW=14,GNH=20,SNW=14;
+function normShape(mask,W,x0,y0,bw,bh,tw,th){
+  const acc=new Float32Array(tw*th),cnt=new Float32Array(tw*th);
+  for(let yy=0;yy<bh;yy++)for(let xx=0;xx<bw;xx++){
+    const gx=Math.min(tw-1,(xx*tw/bw)|0),gy=Math.min(th-1,(yy*th/bh)|0);
+    cnt[gy*tw+gx]++;if(mask(x0+xx,y0+yy))acc[gy*tw+gx]++;}
+  const o=new Float32Array(tw*th);for(let i=0;i<o.length;i++)o[i]=cnt[i]?acc[i]/cnt[i]:0;return norm(o);
+}
+function renderMask(draw,size){
+  const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d',{willReadFrequently:true});
+  x.fillStyle='#fff';x.fillRect(0,0,size,size);x.fillStyle='#000';draw(x,size);
+  const d=x.getImageData(0,0,size,size).data;
+  const m=new Uint8Array(size*size);let mnx=size,mxx=-1,mny=size,mxy=-1;
+  for(let y=0;y<size;y++)for(let xx=0;xx<size;xx++){if(d[4*(y*size+xx)]<128){m[y*size+xx]=1;if(xx<mnx)mnx=xx;if(xx>mxx)mxx=xx;if(y<mny)mny=y;if(y>mxy)mxy=y;}}
+  return {m,mnx,mny,bw:mxx-mnx+1,bh:mxy-mny+1,size};
+}
+const GLYPHS=['A','2','3','4','5','6','7','8','9','J','Q','K'];
+const glyphTpl={};
+(function(){
+  const fonts=['bold 90px Georgia,"Times New Roman",serif','bold 90px Arial,Helvetica,sans-serif','bold 90px "DejaVu Sans",Verdana,sans-serif'];
+  for(const g of GLYPHS){glyphTpl[g]=[];
+    for(const f of fonts){
+      const r=renderMask((x,s)=>{x.font=f;x.textAlign='center';x.textBaseline='middle';x.fillText(g,s/2,s/2);},120);
+      if(r.bw>0)glyphTpl[g].push(normShape((xx,yy)=>r.m[yy*r.size+xx],r.size,r.mnx,r.mny,r.bw,r.bh,GNW,GNH));}}
+})();
+function suitPath(k,x,s){
+  const u=s/10;x.beginPath();
+  if(k==='D'){x.moveTo(5*u,0.5*u);x.lineTo(9*u,5*u);x.lineTo(5*u,9.5*u);x.lineTo(1*u,5*u);x.closePath();}
+  else if(k==='H'){x.moveTo(5*u,9.5*u);x.bezierCurveTo(-2*u,5*u,1*u,-1*u,5*u,3*u);x.bezierCurveTo(9*u,-1*u,12*u,5*u,5*u,9.5*u);}
+  else if(k==='S'){x.moveTo(5*u,0.5*u);x.bezierCurveTo(-2*u,5*u,1*u,10*u,4.5*u,6.5*u);x.lineTo(3.5*u,9.5*u);x.lineTo(6.5*u,9.5*u);x.lineTo(5.5*u,6.5*u);x.bezierCurveTo(9*u,10*u,12*u,5*u,5*u,0.5*u);}
+  else{x.arc(5*u,2.7*u,2.2*u,0,7);x.moveTo(2.6*u+2.2*u,6*u);x.arc(2.6*u,6*u,2.2*u,0,7);x.moveTo(7.4*u+2.2*u,6*u);x.arc(7.4*u,6*u,2.2*u,0,7);
+    x.moveTo(4.4*u,5*u);x.lineTo(3.6*u,9.6*u);x.lineTo(6.4*u,9.6*u);x.lineTo(5.6*u,5*u);}
+  x.fill();
+}
+const suitShapeTpl={};
+for(const k of ['H','D','S','C']){
+  const r=renderMask((x,s)=>suitPath(k,x,s),120);
+  suitShapeTpl[k]=normShape((xx,yy)=>r.m[yy*r.size+xx],r.size,r.mnx,r.mny,r.bw,r.bh,SNW,SNW);
+}
+function cardPixels(cv){
+  const c=document.createElement('canvas');c.width=PW;c.height=PH;const x=c.getContext('2d',{willReadFrequently:true});
+  x.imageSmoothingQuality='high';x.drawImage(cv,0,0,PW,PH);return x.getImageData(0,0,PW,PH).data;
+}
+function readCornerOne(d,paper){
+  const RX0=4,RY0=4,RX1=44,RY1=104,rw=RX1-RX0,rh=RY1-RY0;
+  const ink=new Uint8Array(rw*rh),redK=new Uint8Array(rw*rh);
+  for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){
+    const i=4*((y+RY0)*PW+x+RX0),R=d[i],G=d[i+1],B=d[i+2],L=(R+G+B)/3,Rd=R-(G+B)/2;
+    if(Rd>45&&L<paper*.92){ink[y*rw+x]=1;redK[y*rw+x]=1;}else if(L<paper*.6)ink[y*rw+x]=1;}
+  const lab=new Uint8Array(rw*rh),comps=[],small=[],st=[];
+  for(let s0=0;s0<rw*rh;s0++){
+    if(!ink[s0]||lab[s0])continue;const pts=[];st.push(s0);lab[s0]=1;
+    while(st.length){const k=st.pop();pts.push(k);const px=k%rw,py=(k/rw)|0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const qx=px+dx,qy=py+dy;
+        if(qx<0||qy<0||qx>=rw||qy>=rh)continue;const j=qy*rw+qx;if(ink[j]&&!lab[j]){lab[j]=1;st.push(j);}}}
+    let mnx=1e9,mxx=-1,mny=1e9,mxy=-1,rd=0;
+    for(const k of pts){const px=k%rw,py=(k/rw)|0;if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;if(redK[k])rd++;}
+    const bw=mxx-mnx+1,bh=mxy-mny+1;
+    if(pts.length>=6&&bh>=4&&bh<=16&&bw<=14&&mnx>0&&mxx<rw-1)small.push({mnx,bw,cy:(mny+mxy)/2});
+    if(pts.length<20||bw>32||bh>40||bh<6||mxx>=rw-1||mxy>=rh-1)continue;  /* coupé par la zone = symbole du centre */
+    comps.push({pts,mnx,mny,bw,bh,cy:(mny+mxy)/2,red:rd>pts.length/2});
+  }
+  comps.sort((a,b)=>a.cy-b.cy);
+  /* joker : le mot JOKER écrit en colonne = 4 lettres ou plus empilées dans le coin */
+  if(small.length>=4){
+    small.sort((a,b)=>a.cy-b.cy);
+    const mx=small.reduce((t,c)=>t+c.mnx+c.bw/2,0)/small.length;
+    const col=small.filter(c=>Math.abs(c.mnx+c.bw/2-mx)<9);
+    let rows=0,last=-99;
+    for(const c of col)if(c.cy-last>=5){rows++;last=c.cy;}   /* une lettre cassée en 2 morceaux compte une fois */
+    if(rows>=4)return {id:'JK',conf:1,rv:1,sv:1,rank:'JK',suit:'J'};
+  }
+  if(comps.length<2)return null;
+  const pip=comps[comps.length-1],rank=comps.slice(0,-1);
+  if(rank.length>2)return null;
+  const mk=c=>{const set=new Set(c.pts);return (xx,yy)=>set.has(yy*rw+xx);};
+  /* signe : couleur puis forme */
+  const sh=normShape(mk(pip),rw,pip.mnx,pip.mny,pip.bw,pip.bh,SNW,SNW);
+  const suits=pip.red?['H','D']:['S','C'];
+  let bs=null,bsv=-9,sv2=-9;
+  for(const k of suits){const v=dot(sh,suitShapeTpl[k]);if(v>bsv){sv2=bsv;bsv=v;bs=k;}else if(v>sv2)sv2=v;}
+  if(!pip.red){
+    /* pique : pointe en haut, s'élargit vite ; trèfle : lobe étroit puis rétrécissement avant les 2 lobes */
+    const ext=[];for(let b=0;b<10;b++){let a=1e9,z=-1;
+      for(const k of pip.pts){const py=((k/rw)|0)-pip.mny,px=(k%rw)-pip.mnx;if(Math.min(9,(py*10/pip.bh)|0)===b){if(px<a)a=px;if(px>z)z=px;}}
+      ext.push(z<0?0:(z-a+1)/pip.bw);}
+    bs=(ext[3]-ext[1])>0.2?'S':'C';bsv=Math.max(bsv,0.5);
+  }
+  /* rang */
+  let rk=null,rv=0;
+  if(rank.length===2){
+    const a=rank.slice().sort((p,q)=>(p.mnx+p.bw/2)-(q.mnx+q.bw/2));
+    if(Math.abs(a[0].cy-a[1].cy)<6&&a[0].bw<a[1].bw*.8&&a[0].bh>=a[1].bh*.8){rk='10';rv=0.9;}
+    else return null;
+  }else{
+    const c=rank[0],g=normShape(mk(c),rw,c.mnx,c.mny,c.bw,c.bh,GNW,GNH);
+    let bg=null,bv=-9;
+    for(const G of GLYPHS)for(const t of glyphTpl[G]){const v=dot(g,t);if(v>bv){bv=v;bg=G;}}
+    rk=bg;rv=bv;
+  }
+  return {id:bs+rk,conf:Math.min(rv,bsv),rv,sv:bsv,rank:rk,suit:bs};
+}
+function readCorner(cv){
+  const d0=cardPixels(cv),d1=cardPixels(rot180(cv));
+  const lum=a=>{const v=[];for(let i=0;i<PW*PH;i+=7)v.push((a[4*i]+a[4*i+1]+a[4*i+2])/3);v.sort((x,y)=>x-y);return v[Math.floor(v.length*.9)]||200;};
+  const r0=readCornerOne(d0,lum(d0)),r1=readCornerOne(d1,lum(d1));
+  if(r0&&(!r1||r0.conf>=r1.conf))return r0;
+  if(r1)return r1;
+  /* ni chiffre ni signe lisibles dans le coin + centre très coloré = joker (il n'a pas de numéro) */
+  const L=[];for(let y=Math.round(PH*.1);y<PH*.9;y+=2)for(let x=Math.round(PW*.2);x<PW*.8;x+=2){const i=4*(y*PW+x);L.push(d0[i]*.299+d0[i+1]*.587+d0[i+2]*.114);}
+  const sorted=L.slice().sort((a,b)=>a-b),paper=sorted[Math.floor(sorted.length*.9)]||200;
+  let nonw=0,k=0;
+  for(let y=Math.round(PH*.1);y<PH*.9;y+=2)for(let x=Math.round(PW*.2);x<PW*.8;x+=2){const i=4*(y*PW+x),R=d0[i],G=d0[i+1],B=d0[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+    if(L[k]<paper*.75||(mx&&(mx-mn)/mx>.35))nonw++;k++;}
+  if(nonw/L.length>.5)return {id:'JK',conf:.6,rv:.6,sv:.6,rank:'JK',suit:'J'};
+  return null;
+}
+
 /* state */
 function render(){
   $('#liveCnt').textContent=hand.length;$('#liveTcnt').textContent=table.length;
@@ -599,10 +787,12 @@ function undo(){
 /* frame processing */
 function process(cv){
   if(!setupDone)return;
-  const top=recognize(cv),t=top[0];
-  const ok=!!t&&t[1]>=minScore&&(!top[1]||t[1]-top[1][1]>=.02);
-  $('#liveDbg').textContent=t?`${t[0]} ${Math.round(t[1]*100)}%`:'';
-  if(ok){
+  let t=null,src='';
+  if(cv){const rc=readCorner(cv);
+    if(rc){t=[rc.id,rc.conf];src='coin';}
+    else{const top=recognize(cv);if(top[0]){t=top[0];src='image';}}}
+  $('#liveDbg').textContent=t?`${t[0]} ${Math.round(t[1]*100)}% (${src})`:'—';
+  if(t){
     absent=0;
     if(cand===t[0])streak++;else{cand=t[0];streak=1;}
     if(streak>=NEED&&armed){armed=false;accept(t[0]);}
@@ -627,7 +817,7 @@ async function start(){
     $('#liveStart').textContent='⏹ إيقاف';
     hand=[];table=[];log=[];dealDone=false;target=14;renderHand();render();
     armed=true;cand=null;streak=0;absent=0;
-    timer=setInterval(()=>{if(vid.videoWidth)process(shotCanvas(vid,vid.videoWidth,vid.videoHeight));},TICK);
+    timer=setInterval(()=>{if(vid.videoWidth)process(findCard(vid,vid.videoWidth,vid.videoHeight));},TICK);
     setupDone=true;target=14;analyze();sayWait('يلّا، وريني أوراقك واحدة بعد الأخرى.');
   }catch(e){say('الكاميرا غير متاحة.');stop(true);}
 }
@@ -650,7 +840,7 @@ if(!/[?&]edit/.test(location.search)){
   document.querySelectorAll('section').forEach(x=>x.classList.toggle('on',x.id==='live'));
 }
 render();
-window.LIVE={parseYes,parsePlayers,setup,stop,accept,process,undo,analysisText,bestDiscard,state:()=>({table,log,dealDone})};
+window.LIVE={readCorner,findCard,parseYes,parsePlayers,setup,stop,accept,process,undo,analysisText,bestDiscard,state:()=>({table,log,dealDone})};
 })();
 </script>
 </body>
