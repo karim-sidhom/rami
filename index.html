@@ -155,7 +155,7 @@ function group(acc){
   acc.forEach(function(a){
     for(var i=0;i<groups.length;i++){
       var l=groups[i].items[groups[i].items.length-1];
-      if(Math.abs(l.cy-a.cy)<0.4*a.h&&a.x0-l.x1<a.h&&Math.abs(l.h-a.h)<0.3*a.h){groups[i].items.push(a);return;}
+      if(Math.abs(l.cy-a.cy)<0.4*a.h&&a.x0-l.x1<3*a.h&&Math.abs(l.h-a.h)<0.4*a.h){groups[i].items.push(a);return;}
     }
     groups.push({items:[a]});
   });
