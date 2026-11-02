@@ -99,7 +99,7 @@ function prep(){
   }
   var ink=new Uint8Array(N);
   for(i=0;i<N;i++)ink[i]=gray[i]<=th?1:0;
-  return {w:W,h:H,ink:ink};
+  return {w:W,h:H,ink:ink,rgb:p};
 }
 
 function blobs(d){
@@ -157,6 +157,18 @@ function regionImg(d,x0,y0,x1,y1){
   cx.imageSmoothingEnabled=true;
   cx.drawImage(mc,30,30,tw,100);
   return cc;
+}
+
+function cardColor(d,bb){
+  var r=0,t=0,x,y;
+  for(y=bb.y0;y<bb.y1;y++)for(x=bb.x0;x<bb.x1;x++){
+    var i=y*d.w+x;
+    if(!d.ink[i])continue;
+    var R=d.rgb[i*4],G=d.rgb[i*4+1],B=d.rgb[i*4+2];
+    t++;
+    if(R>90&&R>G*1.5&&R>B*1.5)r++;
+  }
+  return t&&r/t>0.3?'r':'n';
 }
 
 function mapBox(b,dim){
@@ -226,6 +238,7 @@ async function readFrame(){
     var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
     if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
   }
+  words.forEach(function(w){w.col=cardColor(dim,w.bbox)});
   return {dim:dim,words:words};
 }
 
@@ -239,24 +252,26 @@ async function loop(){
         var dim=fr.dim,words=fr.words;
         octx.clearRect(0,0,ov.width,ov.height);
         octx.strokeStyle='#ffd54a';octx.lineWidth=3;
-        var found=[],cur={};
+        var found=[],cur={},CN={r:'أحمر',n:'أسود'};
         words.forEach(function(w){
-          cur[w.text]=(seen[w.text]||0)+1;
-          if(cur[w.text]>=2){
+          var key=w.text+'|'+w.col;
+          cur[key]=(seen[key]||0)+1;
+          if(cur[key]>=2){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
-            if(found.indexOf(w.text)<0)found.push(w.text);
+            if(found.indexOf(key)<0)found.push(key);
           }
         });
         seen=cur;
-        nums.textContent=found.length?found.join('  '):'—';
+        nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
         st.textContent=found.length?found.length+' ✓':'جاهز';
         var now=Date.now();
-        found.forEach(function(n){
-          if(!lastSpoken[n]||now-lastSpoken[n]>5000){
-            speak(n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' '));
+        found.forEach(function(k){
+          if(!lastSpoken[k]||now-lastSpoken[k]>5000){
+            var q=k.split('|'),n=q[0];
+            speak((n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' '))+' '+CN[q[1]]);
           }
-          lastSpoken[n]=now;
+          lastSpoken[k]=now;
         });
       }
     }catch(e){st.textContent='خطأ';}
