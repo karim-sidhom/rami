@@ -378,12 +378,17 @@ async function loop(){
         var found=[],cur={},CN={r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'};
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
-          cur[key]=(seen[key]||0)+1;
-          if(cur[key]>=3){
+          if(!cur[key]){cur[key]=(seen[key]||[]).filter(function(t){return Date.now()-t<=2000});cur[key].push(Date.now());}
+          if(cur[key].length>=5){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(key)<0)found.push(key);
           }
+        });
+        Object.keys(seen).forEach(function(k){
+          if(cur[k])return;
+          var r=seen[k].filter(function(t){return Date.now()-t<=2000});
+          if(r.length)cur[k]=r;
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
