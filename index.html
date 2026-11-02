@@ -311,15 +311,11 @@ async function readFrame(){
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
-    var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok;
-    for(pi=0;pi<3;pi++){
-      await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
-      var rr=await worker.recognize(img);
-      t=(rr.data.text||'').trim();
-      if(pi===2){ok=/^1?[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
-      else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
-      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
-    }
+    var img=blobImg(dim,b,bl.lab),t,ok;
+    var rr=await worker.recognize(img);
+    t=(rr.data.text||'').trim();
+    ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
+    if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);}
   }
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
@@ -336,16 +332,7 @@ async function readFrame(){
     else rest.push(a);
   });
   acc=rest;
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
-  for(wi=0;wi<words.length;wi++){
-    var g=words[wi];
-    if(g.text!=='1')continue;
-    var bb=g.bbox,hh=bb.y1-bb.y0,rx1=Math.min(dim.w,bb.x1+Math.round(3.2*hh));
-    if(rx1-bb.x0<hh)continue;
-    await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789'});
-    var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
-    if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
-  }
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs);
   words.forEach(function(w){
     w.col=cardColor(dim,w.bbox);
     var cb=cardBox(dim,w.bbox);
