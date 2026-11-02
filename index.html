@@ -192,9 +192,13 @@ function cardBox(d,bb){
   return {x0:x0,y0:y0,x1:x1+1,y1:y1+1};
 }
 
-function pipCount(cb,all){
+function pipCount(cb,all,nb){
   return all.filter(function(b){
-    return b.x0>=cb.x0&&b.x1<=cb.x1&&b.y0>=cb.y0&&b.y1<=cb.y1;
+    if(!(b.x0>=cb.x0&&b.x1<=cb.x1&&b.y0>=cb.y0&&b.y1<=cb.y1))return false;
+    var asp=b.w/b.h;
+    if(asp<0.55||asp>1.7)return false;
+    if(nb&&b.x0<nb.x1&&b.x1>nb.x0&&b.y0<nb.y1&&b.y1>nb.y0)return false;
+    return true;
   }).length;
 }
 
@@ -355,7 +359,7 @@ async function readFrame(){
       var sg=suitOf(dim,bl.lab,allBlobs,cb,w.col);if(sg)w.col=sg;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
+      var pc=pipCount(cb,allBlobs,w.bbox);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
     }
   });
   words=words.filter(function(w){
