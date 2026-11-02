@@ -198,6 +198,22 @@ function pipCount(cb,all){
   }).length;
 }
 
+function cardColor2(d,lab,list,cb){
+  var r=0,t=0;
+  list.forEach(function(b){
+    if(b.x0<cb.x0||b.x1>cb.x1||b.y0<cb.y0||b.y1>cb.y1)return;
+    var x,y;
+    for(y=b.y0;y<b.y1;y++)for(x=b.x0;x<b.x1;x++){
+      var i=y*d.w+x;
+      if(lab[i]!==b.id)continue;
+      var R=d.rgb[i*4],G=d.rgb[i*4+1],B=d.rgb[i*4+2],mx=Math.max(R,G,B);
+      t++;
+      if(R>=G&&R>=B&&mx>0&&(R-Math.max(G,B))/mx>0.3)r++;
+    }
+  });
+  return t&&r/t>0.5?'r':'n';
+}
+
 function mapBox(b,dim){
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
@@ -271,6 +287,7 @@ async function readFrame(){
     var cb=cardBox(dim,w.bbox);
     if(cb){
       w.cb=cb;
+      w.col=cardColor2(dim,bl.lab,allBlobs,cb);
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
       var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
