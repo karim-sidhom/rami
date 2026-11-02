@@ -192,18 +192,10 @@ function cardBox(d,bb){
   return {x0:x0,y0:y0,x1:x1+1,y1:y1+1};
 }
 
-function pipCount(cb,all,bb){
-  var m=bb.y1-bb.y0,e=0.15*m;
-  var mir={x0:cb.x0+cb.x1-bb.x1,x1:cb.x0+cb.x1-bb.x0,y0:cb.y0+cb.y1-bb.y1,y1:cb.y0+cb.y1-bb.y0};
-  function hit(b,r){return b.x1>r.x0-e&&b.x0<r.x1+e&&b.y1>r.y0-e&&b.y0<r.y1+e;}
-  var c=all.filter(function(b){
-    return b.x0>=cb.x0&&b.x1<=cb.x1&&b.y0>=cb.y0&&b.y1<=cb.y1&&!hit(b,bb)&&!hit(b,mir);
-  });
-  if(!c.length)return 0;
-  var mh=0,n=0;
-  c.forEach(function(b){if(b.h>mh)mh=b.h});
-  c.forEach(function(b){if(b.h>=0.75*mh)n++});
-  return n;
+function pipCount(cb,all){
+  return all.filter(function(b){
+    return b.x0>=cb.x0&&b.x1<=cb.x1&&b.y0>=cb.y0&&b.y1<=cb.y1;
+  }).length;
 }
 
 function mapBox(b,dim){
@@ -281,7 +273,7 @@ async function readFrame(){
       w.cb=cb;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs,w.bbox);if(pc>=1&&pc<=10)w.text=String(pc);
+      var pc=pipCount(cb,allBlobs);if(pc>=1&&pc<=10)w.text=String(pc);
     }
   });
   words=words.filter(function(w){
