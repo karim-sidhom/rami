@@ -273,11 +273,11 @@ async function readFrame(){
       w.cb=cb;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs);if(pc>=1&&pc<=10)w.text=String(pc);
+      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
     }
   });
   words=words.filter(function(w){
-    if(!w.cb)return true;
+    if(!w.cb||!(w.pc>=1))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
   return {dim:dim,words:words};
@@ -297,7 +297,7 @@ async function loop(){
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
           cur[key]=(seen[key]||0)+1;
-          if(cur[key]>=2){
+          if(cur[key]>=3){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(key)<0)found.push(key);
