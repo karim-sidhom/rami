@@ -311,11 +311,15 @@ async function readFrame(){
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
-    var img=blobImg(dim,b,bl.lab),t,ok;
-    var rr=await worker.recognize(img);
-    t=(rr.data.text||'').trim();
-    ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
-    if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);}
+    var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok;
+    for(pi=0;pi<3;pi++){
+      await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
+      var rr=await worker.recognize(img);
+      t=(rr.data.text||'').trim();
+      if(pi===2){ok=/^1?[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
+      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
+    }
   }
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
@@ -332,7 +336,16 @@ async function readFrame(){
     else rest.push(a);
   });
   acc=rest;
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs);
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
+  for(wi=0;wi<words.length;wi++){
+    var g=words[wi];
+    if(g.text!=='1')continue;
+    var bb=g.bbox,hh=bb.y1-bb.y0,rx1=Math.min(dim.w,bb.x1+Math.round(3.2*hh));
+    if(rx1-bb.x0<hh)continue;
+    await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789'});
+    var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
+    if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
+  }
   words.forEach(function(w){
     w.col=cardColor(dim,w.bbox);
     var cb=cardBox(dim,w.bbox);
@@ -342,7 +355,7 @@ async function readFrame(){
       var sg=suitOf(dim,bl.lab,allBlobs,cb,w.col);if(sg)w.col=sg;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=8)w.text=String(pc);
+      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
     }
   });
   words=words.filter(function(w){
@@ -365,12 +378,17 @@ async function loop(){
         var found=[],cur={},CN={r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'};
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
-          cur[key]=(seen[key]||0)+1;
-          if(cur[key]>=3){
+          if(!cur[key]){cur[key]=(seen[key]||[]).filter(function(t){return Date.now()-t<=2000});cur[key].push(Date.now());}
+          if(cur[key].length>=5){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(key)<0)found.push(key);
           }
+        });
+        Object.keys(seen).forEach(function(k){
+          if(cur[k])return;
+          var r=seen[k].filter(function(t){return Date.now()-t<=2000});
+          if(r.length)cur[k]=r;
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
