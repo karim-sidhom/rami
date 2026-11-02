@@ -278,6 +278,22 @@ function suitOf(d,lab,list,cb,col){
   return tot[pair[0]]>tot[pair[1]]?pair[0]:pair[1];
 }
 
+/* forme déjà reconnue comme un signe (pique, trèfle, cœur, carreau) : pas de lecture de lettre */
+function isSuit(d,lab,b){
+  var T=suitTemplates(),m=suitMask(d,lab,b),k;
+  for(k in T){if(suitScore(m,T[k])>=0.75)return true;}
+  return false;
+}
+
+/* l'indice est dans un coin supérieur de la carte : sinon pas de lecture de lettre */
+function cornerOK(d,b,cbs){
+  var cb=null,i;
+  for(i=0;i<cbs.length;i++){var c=cbs[i];if(b.x0>=c.x0&&b.x1<=c.x1&&b.y0>=c.y0&&b.y1<=c.y1){cb=c;break;}}
+  if(!cb){cb=cardBox(d,b);if(!cb)return false;cbs.push(cb);}
+  var cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2;
+  return Math.min(Math.hypot(cx-cb.x0,cy-cb.y0),Math.hypot(cx-cb.x1,cy-cb.y0))<=0.25*(cb.y1-cb.y0);
+}
+
 function mapBox(b,dim){
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
@@ -308,6 +324,7 @@ async function readFrame(){
   if(!dim)return null;
   var bl=blobs(dim),acc=[],k;
   var allBlobs=bl.list.slice();
+  var cbs=[];
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
@@ -321,7 +338,7 @@ async function readFrame(){
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
     /* lettres K (roi), Q (dame), J (valet), A (as) : lues seulement si ce n'est pas un chiffre */
-    if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
+    if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3&&!isSuit(dim,bl.lab,b)&&cornerOK(dim,b,cbs)){
       await worker.setParameters({tessedit_pageseg_mode:'8',tessedit_char_whitelist:'KQJA'});
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
       if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=50){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
