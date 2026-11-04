@@ -37,16 +37,30 @@ var v=document.getElementById('v'),ov=document.getElementById('ov'),octx=ov.getC
 var nums=document.getElementById('nums'),st=document.getElementById('st'),msg=document.getElementById('msg');
 var work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
 var worker=null,busy=false,voiceOn=true,lastSpoken={},stream=null,seen={};
-var arVoice=null;
+var arVoice=null,frVoice=null,enVoice=null;
 
 function pickVoice(){
   var vs=speechSynthesis.getVoices();
   arVoice=vs.find(function(x){return /^ar/i.test(x.lang)})||null;
+  frVoice=vs.find(function(x){return /^fr/i.test(x.lang)})||null;
+  enVoice=vs.find(function(x){return /^en/i.test(x.lang)})||null;
 }
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
+/* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
+var PACKS={
+  ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
+};
+function pickPack(){
+  if(arVoice)return {p:PACKS.ar,v:arVoice};
+  if(frVoice)return {p:PACKS.fr,v:frVoice};
+  if(enVoice)return {p:PACKS.en,v:enVoice};
+  return {p:PACKS.ar,v:null};
+}
 var actx=null;
 function beep(){
   if(!voiceOn)return;
@@ -62,10 +76,11 @@ function beep(){
   }catch(e){}
 }
 
-function speak(t){
+function speak(t,lang,voice){
   if(!voiceOn||!('speechSynthesis' in window))return;
   var u=new SpeechSynthesisUtterance(t);
-  u.lang='ar-SA';if(arVoice)u.voice=arVoice;u.rate=0.9;
+  var vo=lang?voice:arVoice;
+  u.lang=lang||'ar-SA';if(vo)u.voice=vo;u.rate=0.9;
   speechSynthesis.speak(u);
 }
 
@@ -350,11 +365,11 @@ async function readFrame(){
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
-    /* lettre K (roi) : lue seulement si ce n'est pas un chiffre */
+    /* lettres K (roi), Q (dame), J (valet) : lues seulement si ce n'est pas un chiffre */
     if(!got&&b.w/b.h>=0.4&&b.w/b.h<=1.3){
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'K'});
-      var rk=await worker.recognize(img);
-      if((rk.data.text||'').trim()==='K'&&rk.data.confidence>=70){b.t='K';b.cy=(b.y0+b.y1)/2;acc.push(b);}
+      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJ'});
+      var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
+      if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
   }
   var pairs=[],rest=[],used=[];
@@ -402,12 +417,12 @@ async function readFrame(){
       var sg=suitOf(dim,bl.lab,allBlobs,cb,w.col);if(sg)w.col=sg;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=8&&w.text!=='K')w.text=String(pc);
+      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=8&&!/^[KQJ]$/.test(w.text))w.text=String(pc);
     }
   });
   words=words.filter(function(w){
     if(!w.cb||!(w.pc>=1))return false;
-    if(w.text==='K'&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
+    if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
   return {dim:dim,words:words};
@@ -441,7 +456,8 @@ async function loop(){
           if(!lastSpoken[k]||now-lastSpoken[k]>5000){
             var q=k.split('|'),n=q[0];
             beep();
-            speak((AR[n]||(n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' ')))+' '+CN[q[1]]);
+            var pk=pickPack();
+            speak((pk.p.n[n]||(n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' ')))+' '+pk.p.s[q[1]],pk.p.lang,pk.v);
           }
           lastSpoken[k]=now;
         });
