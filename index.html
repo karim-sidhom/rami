@@ -311,14 +311,20 @@ async function readFrame(){
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   for(k=0;k<bl.list.length&&k<24;k++){
     var b=bl.list[k];
-    var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok;
+    var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok,got=false;
     for(pi=0;pi<3;pi++){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
       if(pi===2){ok=/^1?[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
-      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);break;}
+      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
+    }
+    /* lettres K (roi), Q (dame), J (valet), A (as) : lues seulement si ce n'est pas un chiffre */
+    if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
+      await worker.setParameters({tessedit_pageseg_mode:'8',tessedit_char_whitelist:'KQJA'});
+      var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
+      if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=50){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
   }
   var pairs=[],rest=[],used=[];
@@ -355,11 +361,12 @@ async function readFrame(){
       var sg=suitOf(dim,bl.lab,allBlobs,cb,w.col);if(sg)w.col=sg;
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
-      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=10)w.text=String(pc);
+      var pc=pipCount(cb,allBlobs);w.pc=pc;if(pc>=1&&pc<=8&&!/^[KQJA]$/.test(w.text))w.text=String(pc);
     }
   });
   words=words.filter(function(w){
     if(!w.cb||!(w.pc>=1))return false;
+    if(/^[KQJA]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
   return {dim:dim,words:words};
@@ -378,17 +385,12 @@ async function loop(){
         var found=[],cur={},CN={r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'};
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
-          if(!cur[key]){cur[key]=(seen[key]||[]).filter(function(t){return Date.now()-t<=2000});cur[key].push(Date.now());}
-          if(cur[key].length>=5){
+          cur[key]=(seen[key]||0)+1;
+          if(cur[key]>=3){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(key)<0)found.push(key);
           }
-        });
-        Object.keys(seen).forEach(function(k){
-          if(cur[k])return;
-          var r=seen[k].filter(function(t){return Date.now()-t<=2000});
-          if(r.length)cur[k]=r;
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
