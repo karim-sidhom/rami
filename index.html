@@ -45,6 +45,8 @@ function pickVoice(){
 }
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
+/* nombres dits en mots arabes (le 10 en entier, le roi K) */
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك'};
 var actx=null;
 function beep(){
   if(!voiceOn)return;
@@ -439,7 +441,7 @@ async function loop(){
           if(!lastSpoken[k]||now-lastSpoken[k]>5000){
             var q=k.split('|'),n=q[0];
             beep();
-            speak((n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' '))+' '+CN[q[1]]);
+            speak((AR[n]||(n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' ')))+' '+CN[q[1]]);
           }
           lastSpoken[k]=now;
         });
