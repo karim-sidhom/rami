@@ -278,6 +278,15 @@ function suitOf(d,lab,list,cb,col){
   return tot[pair[0]]>tot[pair[1]]?pair[0]:pair[1];
 }
 
+/* signe (cœur, carreau, pique, trèfle) reconnu par sa forme : inutile de le passer à l'OCR */
+function isSuitBlob(d,lab,b){
+  var asp=b.w/b.h;
+  if(asp<0.55||asp>1.7)return false;
+  var T=suitTemplates(),m=suitMask(d,lab,b),best=0,s;
+  for(var key in T){s=suitScore(m,T[key]);if(s>best)best=s;}
+  return best>=0.75;
+}
+
 function mapBox(b,dim){
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
@@ -309,8 +318,11 @@ async function readFrame(){
   var bl=blobs(dim),acc=[],k;
   var allBlobs=bl.list.slice();
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
-  for(k=0;k<bl.list.length&&k<24;k++){
+  var nOcr=0;
+  for(k=0;k<bl.list.length&&nOcr<24;k++){
     var b=bl.list[k];
+    if(isSuitBlob(dim,bl.lab,b))continue;
+    nOcr++;
     var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok,got=false;
     for(pi=0;pi<3;pi++){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
@@ -331,6 +343,17 @@ async function readFrame(){
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
   acc.forEach(function(a){
     if(used.indexOf(a)>=0)return;
+    if(a.t==='0'){
+      /* le 0 du 10 : le 1 à sa gauche (fin et haut comme lui) n'a pas été lu comme chiffre */
+      var lp=null,i3;
+      for(i3=0;i3<bl.list.length;i3++){
+        var o3=bl.list[i3];
+        if(o3===a||used.indexOf(o3)>=0)continue;
+        if(acc.indexOf(o3)>=0&&o3.t!=='1')continue;
+        if(o3.w<=0.6*o3.h&&o3.x1<=a.x0+2&&a.x0-o3.x1<1.5*a.h&&Math.abs(o3.h-a.h)<0.3*a.h&&Math.abs((o3.y0+o3.y1)/2-a.cy)<0.3*a.h){lp=o3;break;}
+      }
+      if(lp&&acc.indexOf(lp)<0){used.push(a);pairs.push({text:'10',bbox:{x0:lp.x0,y0:Math.min(a.y0,lp.y0),x1:a.x1,y1:Math.max(a.y1,lp.y1)}});return;}
+    }
     if(a.t!=='1'){rest.push(a);return;}
     var partner=null,i2;
     for(i2=0;i2<bl.list.length;i2++){
