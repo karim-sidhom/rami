@@ -45,6 +45,21 @@ function pickVoice(){
 }
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
+var actx=null;
+function beep(){
+  if(!voiceOn)return;
+  try{
+    if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended')actx.resume();
+    var o=actx.createOscillator(),g=actx.createGain(),t0=actx.currentTime;
+    o.frequency.value=880;
+    g.gain.setValueAtTime(0.25,t0);
+    g.gain.exponentialRampToValueAtTime(0.001,t0+0.15);
+    o.connect(g);g.connect(actx.destination);
+    o.start(t0);o.stop(t0+0.15);
+  }catch(e){}
+}
+
 function speak(t){
   if(!voiceOn||!('speechSynthesis' in window))return;
   var u=new SpeechSynthesisUtterance(t);
@@ -68,6 +83,7 @@ document.getElementById('go').onclick=async function(){
   }catch(e){msg.textContent='تعذّر فتح الكاميرا: '+e.message;return;}
   document.getElementById('start').style.display='none';
   speak('');
+  try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
   st.textContent='تحميل...';
   try{
     worker=await Tesseract.createWorker('eng');
@@ -422,6 +438,7 @@ async function loop(){
         found.forEach(function(k){
           if(!lastSpoken[k]||now-lastSpoken[k]>5000){
             var q=k.split('|'),n=q[0];
+            beep();
             speak((n.length>1&&n.length<=6?String(parseInt(n,10)):n.split('').join(' '))+' '+CN[q[1]]);
           }
           lastSpoken[k]=now;
