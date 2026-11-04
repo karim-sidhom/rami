@@ -361,12 +361,18 @@ async function readFrame(){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(pi===2){ok=/^1?[0Oo]$/.test(t)&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJ]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
+      /* un 0 peut être un Q : on revérifie sans liste de chiffres */
+      if(ok&&pi<2&&t==='0'){
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
+        var rz=await worker.recognize(img);
+        if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
+      }
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
     /* lettres K (roi), Q (dame), J (valet) : lues seulement si ce n'est pas un chiffre */
-    if(!got&&b.w/b.h>=0.4&&b.w/b.h<=1.3){
+    if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
       await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJ'});
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
       if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
