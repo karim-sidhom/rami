@@ -419,24 +419,28 @@ function jkBack(u,v,rot,w,h){
   return [u,v];
 }
 async function readJokerOcr(dim){
-  var w=dim.w,h=dim.h,rot=JK_ROT[jkI++%JK_ROT.length];
-  if(rot===90||rot===270){jc.width=h;jc.height=w;}else{jc.width=w;jc.height=h;}
-  jx.setTransform(1,0,0,1,0,0);
-  jx.fillStyle='#fff';jx.fillRect(0,0,jc.width,jc.height);
-  if(rot===90){jx.translate(h,0);jx.rotate(Math.PI/2);}
-  else if(rot===270){jx.translate(0,w);jx.rotate(-Math.PI/2);}
-  else if(rot===180){jx.translate(w,h);jx.rotate(Math.PI);}
-  jx.drawImage(work,0,0,w,h);
-  jx.setTransform(1,0,0,1,0,0);
+  var w=dim.w,h=dim.h,ri,i;
   await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});
-  var r=await worker.recognize(jc),mots=(r.data.words||[]).filter(function(m){return m.confidence>=JK_CONF&&m.text&&m.text.trim()}),i;
-  for(i=0;i<mots.length;i++){
-    if(!estJokerOcr(mots[i].text))continue;
-    var bb=mots[i].bbox,pts=[[bb.x0,bb.y0],[bb.x1,bb.y0],[bb.x1,bb.y1],[bb.x0,bb.y1]].map(function(p){return jkBack(p[0],p[1],rot,w,h)});
-    var xs=pts.map(function(p){return p[0]}),ys=pts.map(function(p){return p[1]});
-    jkLast={x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)};
-    jkT=Date.now();
-    break;
+  for(ri=0;ri<JK_ROT.length;ri++){
+    var rot=JK_ROT[ri];
+    if(rot===90||rot===270){jc.width=h;jc.height=w;}else{jc.width=w;jc.height=h;}
+    jx.setTransform(1,0,0,1,0,0);
+    jx.fillStyle='#fff';jx.fillRect(0,0,jc.width,jc.height);
+    if(rot===90){jx.translate(h,0);jx.rotate(Math.PI/2);}
+    else if(rot===270){jx.translate(0,w);jx.rotate(-Math.PI/2);}
+    else if(rot===180){jx.translate(w,h);jx.rotate(Math.PI);}
+    jx.drawImage(work,0,0,w,h);
+    jx.setTransform(1,0,0,1,0,0);
+    var r=await worker.recognize(jc),mots=(r.data.words||[]).filter(function(m){return m.confidence>=JK_CONF&&m.text&&m.text.trim()}),hit=false;
+    for(i=0;i<mots.length;i++){
+      if(!estJokerOcr(mots[i].text))continue;
+      var bb=mots[i].bbox,pts=[[bb.x0,bb.y0],[bb.x1,bb.y0],[bb.x1,bb.y1],[bb.x0,bb.y1]].map(function(p){return jkBack(p[0],p[1],rot,w,h)});
+      var xs=pts.map(function(p){return p[0]}),ys=pts.map(function(p){return p[1]});
+      jkLast={x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)};
+      jkT=Date.now();hit=true;
+      break;
+    }
+    if(hit)break;
   }
   if(jkLast&&Date.now()-jkT<JK_HOLD)return {text:'JOKER',joker:true,sure:true,col:'j',bbox:jkLast};
   return null;
@@ -523,6 +527,8 @@ function group(acc){
 async function readFrame(){
   var dim=prep();
   if(!dim)return null;
+  var jo=await readJokerOcr(dim);
+  if(jo)return {dim:dim,words:[jo]};
   var bl=blobs(dim),acc=[],k;
   var allBlobs=bl.list.slice();
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
@@ -628,7 +634,6 @@ async function readFrame(){
     if(nb<3)return;
     if(cardAsym(dim,fc.lab,c)>=JOKER_ASYM)words.push({text:'JOKER',joker:true,col:'j',bbox:{x0:c.x0,y0:c.y0,x1:c.x1,y1:c.y1}});
   });
-  if(!words.some(function(w){return w.joker})){var jo=await readJokerOcr(dim);if(jo)words.push(jo);}
   return {dim:dim,words:words};
 }
 
