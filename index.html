@@ -508,8 +508,7 @@ async function readFrame(){
   }
   var jwords=[],jb=[],jr=jokerRuns(bl.list.filter(function(q){return !q.suit}),'v').concat(jokerRuns(bl.list.filter(function(q){return !q.suit}),'h')),ji;
   for(ji=0;ji<jr.length&&ji<2;ji++){
-    /* joker = le seul mot de plusieurs lettres : 4 à 6 formes alignées, sans lecture de lettres ; refusé si au moins 2 sont des chiffres */
-    if(jr[ji].filter(function(q){return acc.indexOf(q)>=0&&/^\d+$/.test(q.t)}).length<2){
+    if(await readJoker(dim,bl.lab,jr[ji])){
       jb=jb.concat(jr[ji]);
       jwords.push({text:'JOKER',joker:true,col:'j',bbox:{x0:Math.min.apply(null,jr[ji].map(function(q){return q.x0})),y0:Math.min.apply(null,jr[ji].map(function(q){return q.y0})),x1:Math.max.apply(null,jr[ji].map(function(q){return q.x1})),y1:Math.max.apply(null,jr[ji].map(function(q){return q.y1}))}});
     }
