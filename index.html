@@ -394,58 +394,6 @@ async function readJoker(dim,lab,run){
    Seuil à régler selon les essais sur de vraies cartes. */
 var JOKER_ASYM=0.35;
 
-/* lecture OCR du mot JOKER (reprise de lecteur_joker.html) : texte lu sur l'image entière, 4 rotations tournées une par image ;
-   le mot JOKER ou un morceau (JO, KE, ER…) déclenche la détection */
-var JK_MOT='JOKER',JK_MIN=2,JK_CONF=40,JK_SIM=0.7,JK_ROT=[0,90,270,180],JK_HOLD=1000;
-var jkI=0,jkLast=null,jkT=0,jc=document.createElement('canvas'),jx=jc.getContext('2d');
-function jkDist(a,b){
-  var m=a.length,n=b.length,d=[],i,j;
-  for(i=0;i<=m;i++){d.push([i].concat(new Array(n).fill(0)));}
-  for(j=0;j<=n;j++)d[0][j]=j;
-  for(i=1;i<=m;i++)for(j=1;j<=n;j++)
-    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
-  return d[m][n];
-}
-function estJokerOcr(texte){
-  var t=texte.toUpperCase().replace(/0/g,'O').replace(/[^A-Z]/g,'');
-  if(t.length>=JK_MIN&&JK_MOT.indexOf(t)>=0)return true;
-  if(t.indexOf(JK_MOT)>=0)return true;
-  return t.length>=4&&1-jkDist(t,JK_MOT)/Math.max(t.length,JK_MOT.length)>=JK_SIM;
-}
-function jkBack(u,v,rot,w,h){
-  if(rot===90)return [v,h-u];
-  if(rot===270)return [w-v,u];
-  if(rot===180)return [w-u,h-v];
-  return [u,v];
-}
-async function readJokerOcr(dim){
-  var w=dim.w,h=dim.h,ri,i;
-  await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});
-  for(ri=0;ri<JK_ROT.length;ri++){
-    var rot=JK_ROT[ri];
-    if(rot===90||rot===270){jc.width=h;jc.height=w;}else{jc.width=w;jc.height=h;}
-    jx.setTransform(1,0,0,1,0,0);
-    jx.fillStyle='#fff';jx.fillRect(0,0,jc.width,jc.height);
-    if(rot===90){jx.translate(h,0);jx.rotate(Math.PI/2);}
-    else if(rot===270){jx.translate(0,w);jx.rotate(-Math.PI/2);}
-    else if(rot===180){jx.translate(w,h);jx.rotate(Math.PI);}
-    jx.drawImage(work,0,0,w,h);
-    jx.setTransform(1,0,0,1,0,0);
-    var r=await worker.recognize(jc),mots=(r.data.words||[]).filter(function(m){return m.confidence>=JK_CONF&&m.text&&m.text.trim()}),hit=false;
-    for(i=0;i<mots.length;i++){
-      if(!estJokerOcr(mots[i].text))continue;
-      var bb=mots[i].bbox,pts=[[bb.x0,bb.y0],[bb.x1,bb.y0],[bb.x1,bb.y1],[bb.x0,bb.y1]].map(function(p){return jkBack(p[0],p[1],rot,w,h)});
-      var xs=pts.map(function(p){return p[0]}),ys=pts.map(function(p){return p[1]});
-      jkLast={x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)};
-      jkT=Date.now();hit=true;
-      break;
-    }
-    if(hit)break;
-  }
-  if(jkLast&&Date.now()-jkT<JK_HOLD)return {text:'JOKER',joker:true,sure:true,col:'j',bbox:jkLast};
-  return null;
-}
-
 function findCards(d){
   var W=d.w,H=d.h,N=W*H,lab=new Int32Array(N),stk=new Int32Array(N),list=[],id=0,s0,minA=0.008*W*H,maxA=0.5*W*H;
   for(s0=0;s0<N;s0++){
@@ -527,8 +475,6 @@ function group(acc){
 async function readFrame(){
   var dim=prep();
   if(!dim)return null;
-  var jo=await readJokerOcr(dim);
-  if(jo)return {dim:dim,words:[jo]};
   var bl=blobs(dim),acc=[],k;
   var allBlobs=bl.list.slice();
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
@@ -651,7 +597,7 @@ async function loop(){
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
           cur[key]=(seen[key]||0)+1;
-          if(cur[key]>=3||w.sure){
+          if(cur[key]>=3){
             var m=mapBox(w.bbox,dim);
             octx.strokeRect(m.x,m.y,m.w,m.h);
             if(found.indexOf(key)<0)found.push(key);
