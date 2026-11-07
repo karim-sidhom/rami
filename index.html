@@ -48,12 +48,12 @@ function pickVoice(){
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد','JOKER':'جوكر'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
 /* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
 var PACKS={
-  ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل',j:''}},
-  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet','JOKER':'joker'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle',j:''}},
-  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack','JOKER':'joker'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs',j:''}}
+  ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
 };
 function pickPack(){
   if(arVoice)return {p:PACKS.ar,v:arVoice};
@@ -111,7 +111,6 @@ document.getElementById('go').onclick=async function(){
 };
 
 var cc=document.createElement('canvas'),cx=cc.getContext('2d');
-var rc=document.createElement('canvas'),rx=rc.getContext('2d');
 var mc=document.createElement('canvas'),mx2=mc.getContext('2d');
 
 function prep(){
@@ -321,74 +320,6 @@ function isSuitBlob(d,lab,b){
   return best>=0.75;
 }
 
-/* JOKER : mot de 5 lettres sur la carte (en colonne ou en ligne, droit ou tourné) */
-function rotImg(rot){
-  var w=mc.width,h=mc.height,sw=(rot%180)?h:w,sh=(rot%180)?w:h;
-  rc.width=sw;rc.height=sh;
-  rx.fillStyle='#fff';rx.fillRect(0,0,sw,sh);
-  rx.save();rx.translate(sw/2,sh/2);rx.rotate(rot*Math.PI/180);rx.drawImage(mc,-w/2,-h/2);rx.restore();
-  var sc=100/sh,tw=Math.max(1,Math.round(sw*sc));
-  cc.width=tw+60;cc.height=160;
-  cx.fillStyle='#fff';cx.fillRect(0,0,cc.width,cc.height);
-  cx.imageSmoothingEnabled=true;
-  cx.drawImage(rc,30,30,tw,100);
-  return cc;
-}
-
-function jokerRuns(L,axis){
-  var out=[],keys={};
-  function pos(b){return axis==='v'?(b.y0+b.y1)/2:(b.x0+b.x1)/2}
-  L.forEach(function(a){
-    var d=Math.max(a.w,a.h),ca=axis==='v'?(a.x0+a.x1)/2:(a.y0+a.y1)/2;
-    var S=L.filter(function(b){
-      if(Math.abs(Math.max(b.w,b.h)-d)>0.35*d)return false;
-      var cb=axis==='v'?(b.x0+b.x1)/2:(b.y0+b.y1)/2;
-      return Math.abs(cb-ca)<0.45*d;
-    });
-    S.sort(function(p,q){return pos(p)-pos(q)});
-    var run=[],i;
-    function flush(){
-      if(run.length>=4&&run.length<=6&&run.indexOf(a)>=0){
-        var key=run.map(function(b){return b.id}).join(',');
-        if(!keys[key]){keys[key]=1;out.push(run);}
-      }
-    }
-    for(i=0;i<S.length;i++){
-      if(run.length&&pos(S[i])-pos(run[run.length-1])>2.2*d){flush();run=[];}
-      run.push(S[i]);
-    }
-    flush();
-  });
-  return out;
-}
-
-/* lettres de JOKER dans l'ordre : 3 sur 4 formes, ou 4 sur 5 ou 6 (une lettre peut manquer) */
-function isJoker(s){
-  var W='JOKER',n=s.length,i,j,dp=[];
-  if(n<4||n>6)return false;
-  for(i=0;i<=n;i++){dp.push(new Array(W.length+1).fill(0));}
-  for(i=1;i<=n;i++)for(j=1;j<=W.length;j++){
-    dp[i][j]=s[i-1]===W[j-1]?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);
-  }
-  return dp[n][W.length]>=(n<=4?3:4);
-}
-
-async function readJoker(dim,lab,run){
-  var rots=[0,90,180,270],ri,bi;
-  for(ri=0;ri<4;ri++){
-    var s='';
-    for(bi=0;bi<run.length;bi++){
-      blobImg(dim,run[bi],lab);
-      var im=rotImg(rots[ri]);
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'JOKER'});
-      var r=await worker.recognize(im),t=(r.data.text||'').trim();
-      s+=(t.length===1&&r.data.confidence>=50)?t:'?';
-    }
-    if(isJoker(s)||isJoker(s.split('').reverse().join('')))return true;
-  }
-  return false;
-}
-
 function mapBox(b,dim){
   var sw=ov.width,sh=ov.height;
   var sc=Math.max(sw/dim.w,sh/dim.h);
@@ -420,11 +351,10 @@ async function readFrame(){
   var bl=blobs(dim),acc=[],k;
   var allBlobs=bl.list.slice();
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
-  bl.list.forEach(function(q){q.suit=isSuitBlob(dim,bl.lab,q)});
   var nOcr=0;
   for(k=0;k<bl.list.length&&nOcr<24;k++){
     var b=bl.list[k];
-    if(b.suit)continue;
+    if(isSuitBlob(dim,bl.lab,b))continue;
     nOcr++;
     var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok,got=false;
     for(pi=0;pi<3;pi++){
@@ -448,14 +378,6 @@ async function readFrame(){
       if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
   }
-  var jwords=[],jb=[],jr=jokerRuns(bl.list.filter(function(q){return !q.suit}),'v').concat(jokerRuns(bl.list.filter(function(q){return !q.suit}),'h')),ji;
-  for(ji=0;ji<jr.length&&ji<2;ji++){
-    if(await readJoker(dim,bl.lab,jr[ji])){
-      jb=jb.concat(jr[ji]);
-      jwords.push({text:'JOKER',joker:true,col:'j',bbox:{x0:Math.min.apply(null,jr[ji].map(function(q){return q.x0})),y0:Math.min.apply(null,jr[ji].map(function(q){return q.y0})),x1:Math.max.apply(null,jr[ji].map(function(q){return q.x1})),y1:Math.max.apply(null,jr[ji].map(function(q){return q.y1}))}});
-    }
-  }
-  acc=acc.filter(function(q){return jb.indexOf(q)<0});
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
   acc.forEach(function(a){
@@ -482,7 +404,7 @@ async function readFrame(){
     else rest.push(a);
   });
   acc=rest;
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs).concat(jwords),wi;
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
   for(wi=0;wi<words.length;wi++){
     var g=words[wi];
     if(g.text!=='1')continue;
@@ -493,7 +415,6 @@ async function readFrame(){
     if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
   }
   words.forEach(function(w){
-    if(w.joker)return;
     w.col=cardColor(dim,w.bbox);
     var cb=cardBox(dim,w.bbox);
     if(cb){
@@ -506,7 +427,6 @@ async function readFrame(){
     }
   });
   words=words.filter(function(w){
-    if(w.joker)return true;
     if(!w.cb||!(w.pc>=1))return false;
     if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
@@ -524,7 +444,7 @@ async function loop(){
         var dim=fr.dim,words=fr.words;
         octx.clearRect(0,0,ov.width,ov.height);
         octx.strokeStyle='#ffd54a';octx.lineWidth=3;
-        var found=[],cur={},CN={r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل',j:'🃏'};
+        var found=[],cur={},CN={r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'};
         words.forEach(function(w){
           var key=w.text+'|'+w.col;
           cur[key]=(seen[key]||0)+1;
