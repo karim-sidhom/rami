@@ -94,10 +94,18 @@ addEventListener('resize',fit);fit();
 
 document.getElementById('go').onclick=async function(){
   msg.textContent='...';
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    msg.textContent='تعذّر فتح الكاميرا: الصفحة يجب أن تُفتح عبر HTTPS (MediaDevices غير متوفر)';return;
+  }
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    }catch(e1){
+      if(e1.name==='NotAllowedError'||e1.name==='SecurityError')throw e1;
+      stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+    }
     v.srcObject=stream;await v.play();
-  }catch(e){msg.textContent='تعذّر فتح الكاميرا: '+e.message;return;}
+  }catch(e){msg.textContent='تعذّر فتح الكاميرا ['+(e.name||'Error')+']: '+(e.message||'');return;}
   document.getElementById('start').style.display='none';
   speak('');
   try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
