@@ -27,7 +27,7 @@ button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px
 <div id="stage">
   <video id="v" playsinline muted autoplay></video>
   <canvas id="ov"></canvas>
-  <div id="top"><span id="st">...</span><span id="mute" style="cursor:pointer">🔊</span></div>
+  <div id="top"><span id="st">...</span><span id="torch" style="cursor:pointer;display:none;font-size:20px">💡</span><span id="mute" style="cursor:pointer">🔊</span></div>
   <div id="bottom"><div id="nums">—</div></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -107,6 +107,16 @@ document.getElementById('go').onclick=async function(){
     v.srcObject=stream;await v.play();
   }catch(e){msg.textContent='تعذّر فتح الكاميرا ['+(e.name||'Error')+']: '+(e.message||'');return;}
   document.getElementById('start').style.display='none';
+  try{
+    var trk=stream.getVideoTracks()[0],caps=trk.getCapabilities?trk.getCapabilities():null,tb=document.getElementById('torch'),tOn=false;
+    if(caps&&caps.torch){
+      tb.style.display='inline';
+      tb.onclick=async function(){
+        try{await trk.applyConstraints({advanced:[{torch:!tOn}]});tOn=!tOn;tb.style.opacity=tOn?1:0.5;}catch(e){}
+      };
+      tb.style.opacity=0.5;
+    }
+  }catch(e){}
   speak('');
   try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
   st.textContent='تحميل...';
@@ -159,12 +169,12 @@ function blobs(d){
       if(qy<H-1&&ink[q+W]&&!lab[q+W]){lab[q+W]=id;stack[sp++]=q+W;}
     }
     var w=x1-x0+1,h=y1-y0+1;
-    if(h<H*0.025||h>H*0.25||w>W*0.2)continue;
+    if(h<H*0.01||h>H*0.25||w>W*0.2)continue;
     if(x0===0||y0===0||x1===W-1||y1===H-1)continue;
-    if(h/w<0.5||h/w>8||area<30)continue;
-    res.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h});
+    if(h/w<0.4||h/w>8||area<10)continue;
+    res.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h,big:(h>=H*0.025&&h/w>=0.5&&area>=30)});
   }
-  return {list:res,lab:lab};
+  return {list:res.filter(function(q){return q.big}),all:res,lab:lab};
 }
 
 var rcv=document.createElement('canvas'),rcx=rcv.getContext('2d');
@@ -346,8 +356,15 @@ function lcsLen(a,b){
     m[i][j]=a[i-1]===b[j-1]?m[i-1][j-1]+1:Math.max(m[i-1][j],m[i][j-1]);
   return m[a.length][b.length];
 }
+function looseSuit(d,lab,b){
+  var asp=b.w/b.h;
+  if(asp<0.55||asp>1.7)return false;
+  var T=suitTemplates(),m=suitMask(d,lab,b),best=0,s2,key;
+  for(key in T){s2=suitScore(m,T[key]);if(s2>best)best=s2;}
+  return best>=0.5;
+}
 function jokerColumns(d,lab,list){
-  var c=list.filter(function(b){return !isSuitBlob(d,lab,b)});
+  var c=list.filter(function(b){return !looseSuit(d,lab,b)});
   c.sort(function(a,b){return a.y0-b.y0});
   var cols=[],used={};
   c.forEach(function(a){
@@ -357,41 +374,31 @@ function jokerColumns(d,lab,list){
       var o=c[j];
       if(used[o.id])continue;
       var gap=o.y0-last.y1,mh=Math.max(o.h,last.h);
-      if(gap>1.0*mh)break;
+      if(gap>1.5*mh)break;
       if(gap<-2)continue;
       var cxa=(a.x0+a.x1)/2,cxo=(o.x0+o.x1)/2;
-      if(Math.abs(cxa-cxo)>0.45*mh)continue;
-      var sameH=Math.abs(o.h-a.h)<0.35*a.h,sameW=Math.abs(o.w-a.w)<0.35*Math.max(a.w,o.w);
+      if(Math.abs(cxa-cxo)>0.7*mh)continue;
+      var sameH=Math.abs(o.h-a.h)<0.5*a.h,sameW=Math.abs(o.w-a.w)<0.5*Math.max(a.w,o.w);
       if(!sameH&&!sameW)continue;
       col.push(o);last=o;
     }
-    if(col.length>=4&&col.length<=6){col.forEach(function(q){used[q.id]=1});cols.push(col);}
+    if(col.length>=2&&col.length<=7){col.forEach(function(q){used[q.id]=1});cols.push(col);}
   });
   return cols.slice(0,2);
 }
+var JDBG='';
 async function findJokers(d,bl){
-  var cols=jokerColumns(d,bl.lab,bl.list),res=[],ci,ri,k;
-  for(ci=0;ci<cols.length;ci++){
-    var col=cols[ci],ok=false;
-    for(ri=0;ri<3&&!ok;ri++){
-      var rot=[0,90,270][ri],s='';
-      for(k=0;k<col.length;k++){
-        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'JOKER'});
-        var rr=await worker.recognize(blobImg(d,col[k],bl.lab,rot));
-        var t=(rr.data.text||'').trim().toUpperCase();
-        s+=/^[JOKER]$/.test(t)?t:'?';
-      }
-      var sc=Math.max(lcsLen(s,'JOKER'),lcsLen(s,'REKOJ'));
-      if(sc>=3&&sc>=col.length-1)ok=true;
-    }
-    if(ok){
-      res.push({blobs:col,text:'JOKER',joker:true,bbox:{
-        x0:Math.min.apply(null,col.map(function(x){return x.x0})),
-        y0:Math.min.apply(null,col.map(function(x){return x.y0})),
-        x1:Math.max.apply(null,col.map(function(x){return x.x1})),
-        y1:Math.max.apply(null,col.map(function(x){return x.y1}))}});
-    }
-  }
+  JDBG='';
+  var jl=bl.all.filter(function(q){return (q.y0+q.y1)/2<d.h/2});
+  var cols=jokerColumns(d,bl.lab,jl),res=[];
+  cols.forEach(function(col){
+    JDBG='J'+col.length;
+    res.push({blobs:col,text:'JOKER',joker:true,bbox:{
+      x0:Math.min.apply(null,col.map(function(x){return x.x0})),
+      y0:Math.min.apply(null,col.map(function(x){return x.y0})),
+      x1:Math.max.apply(null,col.map(function(x){return x.x1})),
+      y1:Math.max.apply(null,col.map(function(x){return x.y1}))}});
+  });
   return res;
 }
 
@@ -536,7 +543,7 @@ async function loop(){
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
-        st.textContent=found.length?found.length+' ✓':'جاهز';
+        st.textContent=(found.length?found.length+' ✓':'جاهز')+(JDBG?'  ['+JDBG+']':'');
         var now=Date.now();
         found.forEach(function(k){
           if(!lastSpoken[k]||now-lastSpoken[k]>5000){
