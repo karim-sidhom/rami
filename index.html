@@ -356,48 +356,51 @@ function lcsLen(a,b){
     m[i][j]=a[i-1]===b[j-1]?m[i-1][j-1]+1:Math.max(m[i-1][j],m[i][j-1]);
   return m[a.length][b.length];
 }
-function looseSuit(d,lab,b){
+function looseSuit(d,lab,b,thr){
   var asp=b.w/b.h;
   if(asp<0.55||asp>1.7)return false;
   var T=suitTemplates(),m=suitMask(d,lab,b),best=0,s2,key;
   for(key in T){s2=suitScore(m,T[key]);if(s2>best)best=s2;}
-  return best>=0.5;
+  return best>=(thr||0.5);
 }
-function jokerColumns(d,lab,list){
+function jokerGroups(d,lab,list,vert){
   var c=list.filter(function(b){return !looseSuit(d,lab,b)});
-  c.sort(function(a,b){return a.y0-b.y0});
-  var cols=[],used={};
-  c.forEach(function(a){
+  var a0=vert?'y0':'x0',a1=vert?'y1':'x1',as=vert?'h':'w',c0=vert?'x0':'y0',c1=vert?'x1':'y1',cs=vert?'w':'h';
+  c.sort(function(p,q){return p[a0]-q[a0]});
+  var out=[],used={},minLen=vert?2:3;
+  c.forEach(function(a,i){
     if(used[a.id])return;
     var col=[a],last=a,j;
-    for(j=c.indexOf(a)+1;j<c.length;j++){
+    for(j=i+1;j<c.length;j++){
       var o=c[j];
       if(used[o.id])continue;
-      var gap=o.y0-last.y1,mh=Math.max(o.h,last.h);
-      if(gap>1.5*mh)break;
+      var gap=o[a0]-last[a1],ms=Math.max(o[as],last[as]);
+      if(gap>1.5*ms)break;
       if(gap<-2)continue;
-      var cxa=(a.x0+a.x1)/2,cxo=(o.x0+o.x1)/2;
-      if(Math.abs(cxa-cxo)>0.7*mh)continue;
-      var sameH=Math.abs(o.h-a.h)<0.5*a.h,sameW=Math.abs(o.w-a.w)<0.5*Math.max(a.w,o.w);
-      if(!sameH&&!sameW)continue;
+      var ca=(a[c0]+a[c1])/2,co=(o[c0]+o[c1])/2;
+      if(Math.abs(ca-co)>0.7*ms)continue;
+      var sameA=Math.abs(o[as]-a[as])<0.5*a[as],sameC=Math.abs(o[cs]-a[cs])<0.5*Math.max(a[cs],o[cs]);
+      if(!sameA&&!sameC)continue;
       col.push(o);last=o;
     }
-    if(col.length>=2&&col.length<=7){col.forEach(function(q){used[q.id]=1});cols.push(col);}
+    if(col.length>=minLen&&col.length<=7){col.forEach(function(q){used[q.id]=1});out.push({col:col,vert:vert});}
   });
-  return cols.slice(0,2);
+  return out;
 }
-var JDBG='';
 async function findJokers(d,bl){
   JDBG='';
   var jl=bl.all.filter(function(q){return (q.y0+q.y1)/2<d.h/2});
-  var cols=jokerColumns(d,bl.lab,jl),res=[];
-  cols.forEach(function(col){
-    JDBG='J'+col.length;
-    res.push({blobs:col,text:'JOKER',joker:true,bbox:{
+  var gs=jokerGroups(d,bl.lab,jl,true).concat(jokerGroups(d,bl.lab,jl,false)).slice(0,3),res=[];
+  gs.forEach(function(g){
+    var col=g.col;
+    var bb={
       x0:Math.min.apply(null,col.map(function(x){return x.x0})),
       y0:Math.min.apply(null,col.map(function(x){return x.y0})),
       x1:Math.max.apply(null,col.map(function(x){return x.x1})),
-      y1:Math.max.apply(null,col.map(function(x){return x.y1}))}});
+      y1:Math.max.apply(null,col.map(function(x){return x.y1}))};
+    var lh=g.vert?(bb.y1-bb.y0)/col.length:(bb.x1-bb.x0)/col.length;
+    JDBG='J'+col.length;
+    res.push({n:col.length,lh:lh,blobs:col,text:'JOKER',joker:true,bbox:bb});
   });
   return res;
 }
@@ -435,7 +438,6 @@ async function readFrame(){
   bl.list=bl.list.filter(function(q){return (q.y0+q.y1)/2<dim.h/2});
   var jokers=await findJokers(dim,bl),jkIds={};
   jokers.forEach(function(j){j.blobs.forEach(function(q){jkIds[q.id]=1})});
-  bl.list=bl.list.filter(function(q){return !jkIds[q.id]});
   var nOcr=0;
   for(k=0;k<bl.list.length&&nOcr<24;k++){
     var b=bl.list[k];
@@ -489,7 +491,7 @@ async function readFrame(){
     else rest.push(a);
   });
   acc=rest;
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs).concat(jokers),wi;
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
   for(wi=0;wi<words.length;wi++){
     var g=words[wi];
     if(g.text!=='1')continue;
@@ -499,6 +501,23 @@ async function readFrame(){
     var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
     if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
   }
+  /* un chiffre lu tout près = vraie carte, pas un Joker */
+  function near(j,w){
+    var pd=4*j.lh;
+    return w.bbox.x1>j.bbox.x0-pd&&w.bbox.x0<j.bbox.x1+pd&&w.bbox.y1>j.bbox.y0-pd&&w.bbox.y0<j.bbox.y1+pd;
+  }
+  jokers=jokers.filter(function(j){
+    return !words.some(function(w){
+      if(/^\d{1,2}$/.test(w.text))return near(j,w);
+      if(j.n<=2&&/^[KQJ]$/.test(w.text))return near(j,w);
+      return false;
+    });
+  });
+  words=words.filter(function(w){
+    return !jokers.some(function(j){
+      return w.bbox.x1>j.bbox.x0-4&&w.bbox.x0<j.bbox.x1+4&&w.bbox.y1>j.bbox.y0-4&&w.bbox.y0<j.bbox.y1+4;
+    });
+  }).concat(jokers);
   words.forEach(function(w){
     w.col=cardColor(dim,w.bbox);
     var cb=cardBox(dim,w.bbox);
@@ -514,6 +533,7 @@ async function readFrame(){
     }
   });
   words=words.filter(function(w){
+    if(w.joker)return true;
     if(!w.cb||!(w.pc>=1))return false;
     if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
