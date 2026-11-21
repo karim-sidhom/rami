@@ -76,6 +76,25 @@ function beep(){
   }catch(e){}
 }
 
+/* DISTANCE PARFAITE : hauteur du chiffre/lettre du coin, en % de la hauteur de l'image.
+   Trop petit = trop loin, trop grand = trop près. Ajuste ces deux valeurs si besoin. */
+var PERF_MIN=0.045,PERF_MAX=0.09,perfOk=0,perfMiss=0,perfArmed=true;
+function perfectBeep(){
+  if(!voiceOn)return;
+  try{
+    if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended')actx.resume();
+    [0,0.14].forEach(function(dt){
+      var o=actx.createOscillator(),g=actx.createGain(),t0=actx.currentTime+dt;
+      o.frequency.value=1320;
+      g.gain.setValueAtTime(0.3,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+0.1);
+      o.connect(g);g.connect(actx.destination);
+      o.start(t0);o.stop(t0+0.1);
+    });
+  }catch(e){}
+}
+
 function speak(t,lang,voice){
   if(!voiceOn||!('speechSynthesis' in window))return;
   var u=new SpeechSynthesisUtterance(t);
@@ -562,6 +581,18 @@ async function loop(){
           }
         });
         seen=cur;
+        var good=words.some(function(w){
+          if(w.joker)return false;
+          var r=(w.bbox.y1-w.bbox.y0)/dim.h;
+          return r>=PERF_MIN&&r<=PERF_MAX;
+        });
+        if(good){
+          perfMiss=0;perfOk++;
+          if(perfOk>=2&&perfArmed){perfectBeep();perfArmed=false;}
+        }else{
+          perfOk=0;perfMiss++;
+          if(perfMiss>=3)perfArmed=true;
+        }
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
         st.textContent=(found.length?found.length+' ✓':'جاهز')+(JDBG?'  ['+JDBG+']':'');
         var now=Date.now();
