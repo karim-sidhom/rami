@@ -365,12 +365,6 @@ async function readFrame(){
     if(isSuitBlob(dim,bl.lab,b))continue;
     nOcr++;
     var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok,got=false;
-    /* as : testé en premier, sans liste de chiffres, sinon le A est forcé en 4 ou 1 */
-    if(b.w/b.h>=0.3&&b.w/b.h<=1.3){
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-      var ra=await worker.recognize(img);
-      if((ra.data.text||'').trim()==='A'&&ra.data.confidence>=70){b.t='A';b.cy=(b.y0+b.y1)/2;acc.push(b);continue;}
-    }
     for(pi=0;pi<3;pi++){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
