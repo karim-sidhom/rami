@@ -48,12 +48,12 @@ function pickVoice(){
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','A':'آس','K':'ملك','Q':'ملكة','J':'ولد'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
 /* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
 var PACKS={
   ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
-  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','A':'as','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
-  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','A':'ace','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
 };
 function pickPack(){
   if(arVoice)return {p:PACKS.ar,v:arVoice};
@@ -353,9 +353,7 @@ function group(acc){
   });
 }
 
-var dbg=[];
 async function readFrame(){
-  dbg=[];
   var dim=prep();
   if(!dim)return null;
   var bl=blobs(dim),acc=[],k;
@@ -367,18 +365,11 @@ async function readFrame(){
     if(isSuitBlob(dim,bl.lab,b))continue;
     nOcr++;
     var img=blobImg(dim,b,bl.lab),pass=[['10','0123456789'],['13','0123456789'],['10','']],pi,t,ok,got=false;
-    /* as : lu avant les chiffres, sinon le A est forcé en chiffre */
-    if(b.w/b.h>=0.3&&b.w/b.h<=1.3){
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'AKQJ0123456789'});
-      var ra=await worker.recognize(img);
-      dbg.push((ra.data.text||'').trim()+':'+Math.round(ra.data.confidence));
-      if((ra.data.text||'').trim()==='A'&&ra.data.confidence>=60){b.t='A';b.cy=(b.y0+b.y1)/2;acc.push(b);continue;}
-    }
     for(pi=0;pi<3;pi++){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[AKQJ]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJ]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       /* un 0 peut être un Q : on revérifie sans liste de chiffres */
       if(ok&&pi<2&&t==='0'){
@@ -390,9 +381,9 @@ async function readFrame(){
     }
     /* lettres K (roi), Q (dame), J (valet) : lues seulement si ce n'est pas un chiffre */
     if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'AKQJ'});
+      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJ'});
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
-      if(/^[AKQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
+      if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
   }
   var pairs=[],rest=[],used=[];
@@ -431,7 +422,6 @@ async function readFrame(){
     var r7=await worker.recognize(regionImg(dim,bb.x0,bb.y0,rx1,bb.y1));
     if(/^10$/.test((r7.data.text||'').trim())&&r7.data.confidence>=50){g.text='10';g.bbox={x0:bb.x0,y0:bb.y0,x1:rx1,y1:bb.y1};}
   }
-  words.forEach(function(w){if(w.text==='1')w.text='A';});
   words.forEach(function(w){
     w.col=cardColor(dim,w.bbox);
     var cb=cardBox(dim,w.bbox);
@@ -446,7 +436,7 @@ async function readFrame(){
   });
   words=words.filter(function(w){
     if(!w.cb||!(w.pc>=1))return false;
-    if(/^[AKQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
+    if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
   return {dim:dim,words:words};
@@ -474,7 +464,6 @@ async function loop(){
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
-        nums.textContent+='   [OCR: '+dbg.slice(0,8).join(' | ')+']';
         st.textContent=found.length?found.length+' ✓':'جاهز';
         var now=Date.now();
         found.forEach(function(k){
