@@ -48,12 +48,12 @@ function pickVoice(){
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد','A':'آس'};
 /* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
 var PACKS={
   ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
-  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
-  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet','A':'as'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack','A':'ace'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
 };
 function pickPack(){
   if(arVoice)return {p:PACKS.ar,v:arVoice};
@@ -144,7 +144,7 @@ function prep(){
 }
 
 function blobs(d){
-  var W=d.w,H=d.h,ink=d.ink,N=W*H,lab=new Int32Array(N),stack=new Int32Array(N),res=[],id=0,s0;
+  var W=d.w,H=d.h,ink=d.ink,N=W*H,lab=new Int32Array(N),stack=new Int32Array(N),res=[],big=[],id=0,s0;
   for(s0=0;s0<N;s0++){
     if(!ink[s0]||lab[s0])continue;
     id++;var sp=0;stack[sp++]=s0;lab[s0]=id;
@@ -159,12 +159,17 @@ function blobs(d){
       if(qy<H-1&&ink[q+W]&&!lab[q+W]){lab[q+W]=id;stack[sp++]=q+W;}
     }
     var w=x1-x0+1,h=y1-y0+1;
-    if(h<H*0.025||h>H*0.25||w>W*0.2)continue;
+    if(h<H*0.025)continue;
     if(x0===0||y0===0||x1===W-1||y1===H-1)continue;
+    if(h>H*0.25||w>W*0.2){
+      /* grande forme : candidat symbole central d'un AS */
+      if(h<=H*0.7&&w<=W*0.6&&area>=200&&w/h>=0.55&&w/h<=1.7)big.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h});
+      continue;
+    }
     if(h/w<0.5||h/w>8||area<30)continue;
     res.push({id:id,x0:x0,y0:y0,x1:x1+1,y1:y1+1,w:w,h:h});
   }
-  return {list:res,lab:lab};
+  return {list:res,lab:lab,big:big};
 }
 
 function blobImg(d,b,lab){
@@ -353,6 +358,35 @@ function group(acc){
   });
 }
 
+/* AS : un seul grand signe (trèfle, carreau, cœur, pique) au centre de la carte */
+function detectAces(d,lab,all){
+  var T=suitTemplates(),res=[];
+  all.forEach(function(b){
+    if(b.h<d.h*0.08)return;
+    var asp=b.w/b.h;
+    if(asp<0.55||asp>1.7)return;
+    var m=suitMask(d,lab,b),best=0,k,s;
+    for(k in T){s=suitScore(m,T[k]);if(s>best)best=s;}
+    if(best<0.55)return;
+    var cb=cardBox(d,b);
+    if(!cb)return;
+    var cw=cb.x1-cb.x0,ch=cb.y1-cb.y0;
+    if(b.h<0.25*ch||b.h>0.7*ch||b.w>0.8*cw)return;
+    /* le signe est au centre de la carte */
+    if(Math.abs((b.x0+b.x1)/2-(cb.x0+cb.x1)/2)>0.2*cw)return;
+    if(Math.abs((b.y0+b.y1)/2-(cb.y0+cb.y1)/2)>0.2*ch)return;
+    /* un seul grand signe : pas d'autre grande forme dans la carte */
+    if(all.some(function(o){
+      return o!==b&&o.x0>=cb.x0&&o.x1<=cb.x1&&o.y0>=cb.y0&&o.y1<=cb.y1&&o.h>0.5*b.h;
+    }))return;
+    var col=cardColor2(d,lab,[b],cb),pair=col==='r'?['h','d']:['s','c'];
+    var s0=suitScore(m,T[pair[0]]),s1=suitScore(m,T[pair[1]]),hi=Math.max(s0,s1),lo=Math.min(s0,s1);
+    var suit=(hi>=0.5&&hi-lo>=0.03)?(s0>=s1?pair[0]:pair[1]):col;
+    res.push({text:'A',col:suit,bbox:{x0:b.x0,y0:b.y0,x1:b.x1,y1:b.y1},cb:cb,pc:1,cd:0});
+  });
+  return res;
+}
+
 async function readFrame(){
   var dim=prep();
   if(!dim)return null;
@@ -439,6 +473,14 @@ async function readFrame(){
     if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
+  var aces=detectAces(dim,bl.lab,allBlobs.concat(bl.big));
+  if(aces.length){
+    /* l'AS prime : on retire ce qui a été lu dans la même carte (le A de l'index peut être pris pour un chiffre) */
+    words=words.filter(function(w){
+      var wx=(w.bbox.x0+w.bbox.x1)/2,wy=(w.bbox.y0+w.bbox.y1)/2;
+      return !aces.some(function(a){return wx>=a.cb.x0&&wx<=a.cb.x1&&wy>=a.cb.y0&&wy<=a.cb.y1;});
+    }).concat(aces);
+  }
   return {dim:dim,words:words};
 }
 
