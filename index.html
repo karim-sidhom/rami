@@ -36,7 +36,7 @@ button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px
 var v=document.getElementById('v'),ov=document.getElementById('ov'),octx=ov.getContext('2d');
 var nums=document.getElementById('nums'),st=document.getElementById('st'),msg=document.getElementById('msg');
 var work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
-var worker=null,busy=false,voiceOn=true,lastSpoken={},stream=null,seen={};
+var dbg=[],worker=null,busy=false,voiceOn=true,lastSpoken={},stream=null,seen={};
 var arVoice=null,frVoice=null,enVoice=null;
 
 function pickVoice(){
@@ -365,7 +365,7 @@ function detectAces(d,lab,all){
      et sans voisin de taille comparable (les cartes 2 à 10 ont plusieurs signes) */
   var cand=all.filter(function(b){
     var asp=b.w/b.h;
-    if(b.h<d.h*0.12||asp<0.55||asp>1.7)return false;
+    if(b.h<d.h*0.06||asp<0.55||asp>1.7)return false;
     var cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2;
     return !all.some(function(o){
       return o!==b&&o.h>0.5*b.h&&Math.abs((o.x0+o.x1)/2-cx)<2.5*b.h&&Math.abs((o.y0+o.y1)/2-cy)<2.5*b.h;
@@ -376,11 +376,11 @@ function detectAces(d,lab,all){
   cand.slice(0,2).forEach(function(b){
     var m=suitMask(d,lab,b),best=0,k,s;
     for(k in T){s=suitScore(m,T[k]);if(s>best)best=s;}
-    if(best<0.55)return;
+    if(best<0.45)return;
     var cb=cardBox(d,b);
     if(!cb)return;
     var cw=cb.x1-cb.x0,ch=cb.y1-cb.y0;
-    if(b.h<0.25*ch||b.h>0.7*ch||b.w>0.8*cw)return;
+    if(b.h<0.12*ch||b.h>0.7*ch||b.w>0.8*cw)return;
     /* le signe est au centre de la carte */
     if(Math.abs((b.x0+b.x1)/2-(cb.x0+cb.x1)/2)>0.2*cw)return;
     if(Math.abs((b.y0+b.y1)/2-(cb.y0+cb.y1)/2)>0.2*ch)return;
@@ -399,7 +399,7 @@ function detectAces(d,lab,all){
 async function readFrame(){
   var dim=prep();
   if(!dim)return null;
-  var bl=blobs(dim),acc=[],k;
+  var bl=blobs(dim),acc=[],k;dbg=[];
   var allBlobs=bl.list.slice();
   /* AS d'abord (rapide) : une carte AS n'a pas de chiffre, on ne lance pas l'OCR dessus */
   var aces=detectAces(dim,bl.lab,allBlobs.concat(bl.big));
@@ -415,7 +415,7 @@ async function readFrame(){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=(t==='A'?50:70);if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       /* un 0 peut être un Q : on revérifie sans liste de chiffres */
       if(ok&&pi<2&&t==='0'){
@@ -427,7 +427,7 @@ async function readFrame(){
       if(ok&&pi<2&&(t==='4'||t==='1'||t==='7')){
         await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
         var ra=await worker.recognize(img);
-        if((ra.data.text||'').trim().toUpperCase()==='A'&&ra.data.confidence>=65)t='A';
+        if((ra.data.text||'').trim().toUpperCase()==='A'&&ra.data.confidence>=50)t='A';
       }
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
@@ -435,7 +435,8 @@ async function readFrame(){
     if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
       await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
-      if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
+      dbg.push((lt||'?')+Math.round(rk.data.confidence));
+      if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=(lt==='A'?50:70)){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
   }
   var pairs=[],rest=[],used=[];
@@ -523,7 +524,7 @@ async function loop(){
         });
         seen=cur;
         nums.textContent=found.length?found.map(function(k){var q=k.split('|');return q[0]+' '+CN[q[1]]}).join('  '):'—';
-        st.textContent=found.length?found.length+' ✓':'جاهز';
+        st.textContent=found.length?found.length+' ✓':'جاهز'+(dbg.length?' '+dbg.slice(0,4).join(' '):'');
         var now=Date.now();
         found.forEach(function(k){
           if(!lastSpoken[k]||now-lastSpoken[k]>5000){
