@@ -423,11 +423,14 @@ async function readFrame(){
         var rz=await worker.recognize(img);
         if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
       }
-      /* un A est souvent lu comme 4, 1 ou 7 : on revérifie sans liste de chiffres */
+      /* un A lu comme 1, 4 ou 7 : revérifié SEULEMENT si la carte a très peu de formes (un As ; un vrai 4 ou 7 en a bien plus) */
       if(ok&&pi<2&&(t==='4'||t==='1'||t==='7')){
-        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-        var ra=await worker.recognize(img);
-        if((ra.data.text||'').trim().toUpperCase()==='A'&&ra.data.confidence>=50)t='A';
+        var cbA=cardBox(dim,b);
+        if(cbA&&pipCount(cbA,allBlobs.concat(bl.big))<=5){
+          await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
+          var ra=await worker.recognize(img);
+          if((ra.data.text||'').trim().toUpperCase()==='A'&&ra.data.confidence>=50)t='A';
+        }
       }
       if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
