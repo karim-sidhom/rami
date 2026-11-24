@@ -441,6 +441,34 @@ async function readFrame(){
       dbg.push((lt||'?')+Math.round(rk.data.confidence));
       if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=(lt==='A'?50:70)){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
+    /* Q dont la queue touche le petit signe dessous : forme Q+signe trop haute que l'OCR lit mal (0, 9...).
+       Seulement si rien n'a été lu ou si l'OCR a lu 0 : un chiffre déjà lu (6, 8, 9...) n'est jamais touché. Le BAS doit ressembler à un signe et le HAUT à un O/0/Q. */
+    if((!b.t||b.t==='0')&&b.h/b.w>=1.4&&b.h/b.w<=4){
+      var qdone=false,fq=[0.55,0.6,0.5,0.65],fqi,q10=false;
+      for(fqi=0;fqi<fq.length&&!qdone;fqi++){
+        var qy=b.y0+Math.round(b.h*fq[fqi]),lx0=b.x1,lx1=b.x0,ly0=b.y1,ly1=b.y0,px,py;
+        for(py=qy;py<b.y1;py++)for(px=b.x0;px<b.x1;px++){if(bl.lab[py*dim.w+px]===b.id){if(px<lx0)lx0=px;if(px+1>lx1)lx1=px+1;if(py<ly0)ly0=py;if(py+1>ly1)ly1=py+1;}}
+        if(lx1<=lx0||ly1<=ly0)continue;
+        var low={id:b.id,x0:lx0,x1:lx1,y0:ly0,y1:ly1,w:lx1-lx0,h:ly1-ly0},la=low.w/low.h;
+        if(la<0.55||la>1.7||low.h<0.25*b.h)continue;
+        var lm=suitMask(dim,bl.lab,low),ls=0,lk;
+        for(lk in suitTemplates()){var lsc=suitScore(lm,suitTemplates()[lk]);if(lsc>ls)ls=lsc;}
+        if(ls<0.6)continue;
+        var up={id:b.id,x0:b.x0,x1:b.x1,y0:b.y0,y1:qy,w:b.w,h:qy-b.y0},uh=up.h,qi;
+        /* le 0 d'un « 10 » : un 1 fin à sa gauche -> on ne touche à rien */
+        for(qi=0;qi<bl.list.length;qi++){var o4=bl.list[qi];
+          if(o4!==b&&o4.w<=0.6*o4.h&&o4.x1<=b.x0+2&&b.x0-o4.x1<1.5*uh&&Math.abs(o4.h-uh)<0.35*uh&&Math.abs((o4.y0+o4.y1)/2-(up.y0+up.y1)/2)<0.5*uh){q10=true;break;}}
+        if(q10)break;
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJAO0'});
+        var rq=await worker.recognize(blobImg(dim,up,bl.lab)),lq=(rq.data.text||'').trim();
+        /* rond (O, 0) ou Q au-dessus d'un signe = dame (la queue est cachée dans le signe) */
+        if((lq==='Q'||lq==='O'||lq==='0')&&rq.data.confidence>=70){
+          var oy1=b.y1,inAcc=!!b.t;b.t='Q';b.y1=qy;b.h=qy-b.y0;b.cy=(b.y0+b.y1)/2;if(!inAcc)acc.push(b);
+          allBlobs.push({id:b.id,x0:lx0,x1:lx1,y0:ly0,y1:ly1,w:low.w,h:low.h});
+          qdone=true;
+        }
+      }
+    }
   }
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
