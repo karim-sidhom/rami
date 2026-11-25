@@ -51,12 +51,12 @@ function pickVoice(){
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد','A':'آس'};
 /* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
 var PACKS={
   ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
-  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
-  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet','A':'as'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack','A':'ace'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
 };
 function pickPack(){
   if(arVoice)return {p:PACKS.ar,v:arVoice};
@@ -350,53 +350,24 @@ function group(acc){
   });
   return groups.map(function(g){
     var it=g.items;
-    return {text:it.map(function(x){return x.t}).join(''),
+    return {lt:it.length===1?it[0].lt:undefined,lc:it.length===1?it[0].lc:0,text:it.map(function(x){return x.t}).join(''),
       bbox:{x0:Math.min.apply(null,it.map(function(x){return x.x0})),y0:Math.min.apply(null,it.map(function(x){return x.y0})),
             x1:Math.max.apply(null,it.map(function(x){return x.x1})),y1:Math.max.apply(null,it.map(function(x){return x.y1}))}};
   });
 }
 
-/* dame (Q) reconnue par sa forme : un anneau (un seul trou) avec une queue en bas à droite,
-   donc le barycentre de l'encre est décalé vers le bas/droite par rapport à celui du trou.
-   Un vrai 0 ou un O est symétrique : décalage nul. Sert de renfort quand l'OCR lit le Q comme un 0. */
-function isQShape(d,lab,b){
-  var w=b.w,h=b.h;
-  if(h<14||w/h<0.7)return false;
-  var ink=new Uint8Array(w*h),x,y,i;
-  for(y=0;y<h;y++)for(x=0;x<w;x++)ink[y*w+x]=lab[(b.y0+y)*d.w+b.x0+x]===b.id?1:0;
-  var comp=new Int32Array(w*h),stk=new Int32Array(w*h),nc=0,sizes=[0],sx=[0],sy=[0],border=[0];
-  for(i=0;i<w*h;i++){
-    if(ink[i]||comp[i])continue;
-    nc++;var sp=0,sz=0,ax=0,ay=0,bd=0;stk[sp++]=i;comp[i]=nc;
-    while(sp){
-      var q=stk[--sp],qx=q%w,qy=(q-qx)/w;
-      sz++;ax+=qx;ay+=qy;
-      if(qx===0||qy===0||qx===w-1||qy===h-1)bd=1;
-      if(qx>0&&!ink[q-1]&&!comp[q-1]){comp[q-1]=nc;stk[sp++]=q-1;}
-      if(qx<w-1&&!ink[q+1]&&!comp[q+1]){comp[q+1]=nc;stk[sp++]=q+1;}
-      if(qy>0&&!ink[q-w]&&!comp[q-w]){comp[q-w]=nc;stk[sp++]=q-w;}
-      if(qy<h-1&&!ink[q+w]&&!comp[q+w]){comp[q+w]=nc;stk[sp++]=q+w;}
-    }
-    sizes.push(sz);sx.push(ax);sy.push(ay);border.push(bd);
-  }
-  var big=0,holes=0,c;
-  for(c=1;c<=nc;c++){
-    if(border[c]||sizes[c]<0.02*w*h)continue;
-    holes++;if(!big||sizes[c]>sizes[big])big=c;
-  }
-  if(holes!==1)return false;
-  var hf=sizes[big]/(w*h),hx=sx[big]/sizes[big],hy=sy[big]/sizes[big];
-  var n=0,ix=0,iy=0;
-  for(y=0;y<h;y++)for(x=0;x<w;x++)if(ink[y*w+x]){n++;ix+=x;iy+=y;}
-  if(!n)return false;
-  var dy=(iy/n-hy)/h,dx=(ix/n-hx)/w;
-  return hf>=0.12&&hf<=0.55&&hy/h>=0.38&&hy/h<=0.58&&dy>=0.02&&dy<=0.2&&dx>=-0.03&&dx<=0.07;
-}
-/* un 1 fin juste à gauche = ce blob est le 0 d'un 10, pas une dame */
-function hasOneLeft(list,a){
-  return list.some(function(o){
-    return o!==a&&o.w<=0.6*o.h&&o.x1<=a.x0+2&&a.x0-o.x1<1.5*a.h&&Math.abs(o.h-a.h)<0.3*a.h&&Math.abs((o.y0+o.y1)/2-(a.y0+a.y1)/2)<0.3*a.h;
+/* gros signes au centre de la carte : 0 ou 1 pour J/K/Q/A, au moins 2 pour une carte à chiffre.
+   Référence de taille = le petit signe du coin juste sous le rang ; un gros signe est > 1,4 fois plus haut. */
+function centerPips(d,lab,all,cb,bb){
+  var hh=bb.y1-bb.y0,suits=all.filter(function(b){
+    return b.x0>=cb.x0&&b.x1<=cb.x1&&b.y0>=cb.y0&&b.y1<=cb.y1&&isSuitBlob(d,lab,b);
+  }),ref=0,best=1e9;
+  suits.forEach(function(b){
+    var dist=b.y0-bb.y1;
+    if(dist>=-2&&dist<2*hh&&b.x1>bb.x0&&b.x0<bb.x1&&dist<best){best=dist;ref=b.h;}
   });
+  if(!ref)ref=hh;
+  return suits.filter(function(b){return b.h>1.4*ref}).length;
 }
 
 async function readFrame(){
@@ -416,28 +387,20 @@ async function readFrame(){
       await worker.setParameters({tessedit_pageseg_mode:pass[pi][0],tessedit_char_whitelist:pass[pi][1]});
       var rr=await worker.recognize(img);
       t=(rr.data.text||'').trim();
-      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJ]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
+      if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=70;if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
-      dbgLines.push('forme '+b.w+'x'+b.h+' essai'+pi+' lu "'+t+'" conf '+Math.round(rr.data.confidence)+(ok?' OK':''));
-      /* un 0 peut être un Q : on revérifie sans liste de chiffres */
-      if(ok&&pi<2&&t==='0'){
-        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-        var rz=await worker.recognize(img);
-        if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
-      }
-      /* renfort par la forme : un Q lu comme 0 (jamais le 0 d'un 10) */
-      if(ok&&t==='0'&&!hasOneLeft(bl.list,b)&&isQShape(dim,bl.lab,b))t='Q';
-      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
+      if(ok){b.t=t;b.dt=t;got=true;break;}
     }
-    /* lettres K (roi), Q (dame), J (valet) : lues seulement si ce n'est pas un chiffre */
-    if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
-      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJ'});
-      var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
-      dbgLines.push('forme '+b.w+'x'+b.h+' lettres lu "'+lt+'" conf '+Math.round(rk.data.confidence));
-      if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
+    /* en parallèle : la même forme lue en lettres (J, K, Q, A). Le choix chiffre/lettre se fait plus bas, d'après les signes du centre. */
+    var lt='',lc=0;
+    if(b.w/b.h>=0.3&&b.w/b.h<=1.3){
+      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
+      var rk=await worker.recognize(img);
+      lt=(rk.data.text||'').trim();lc=rk.data.confidence;
+      if(/^[KQJA]$/.test(lt)&&lc>=70){b.lt=lt;b.lc=lc;if(!got){b.t=lt;got=true;}}
     }
-    /* l'OCR n'a rien donné : si la forme est celle d'une dame, on la prend */
-    if(!got&&acc.indexOf(b)<0&&!hasOneLeft(bl.list,b)&&isQShape(dim,bl.lab,b)){b.t='Q';b.cy=(b.y0+b.y1)/2;acc.push(b);}
+    dbgLines.push('forme '+b.w+'x'+b.h+'  chiffre '+(b.dt||'-')+'  lettre '+(lt||'-')+'/'+Math.round(lc));
+    if(got){b.cy=(b.y0+b.y1)/2;acc.push(b);}
   }
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
@@ -453,8 +416,6 @@ async function readFrame(){
         if(o3.w<=0.6*o3.h&&o3.x1<=a.x0+2&&a.x0-o3.x1<1.5*a.h&&Math.abs(o3.h-a.h)<0.3*a.h&&Math.abs((o3.y0+o3.y1)/2-a.cy)<0.3*a.h){lp=o3;break;}
       }
       if(lp&&acc.indexOf(lp)<0){used.push(a);pairs.push({text:'10',bbox:{x0:lp.x0,y0:Math.min(a.y0,lp.y0),x1:a.x1,y1:Math.max(a.y1,lp.y1)}});return;}
-      /* un 0 tout seul (sans 1 à sa gauche) n'existe pas sur une carte : c'est la dame (Q) lue comme un 0 */
-      a.t='Q';
     }
     if(a.t!=='1'){rest.push(a);return;}
     var partner=null,i2;
@@ -467,7 +428,7 @@ async function readFrame(){
     else rest.push(a);
   });
   acc=rest;
-  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)}).concat(pairs),wi;
+  var words=group(acc).filter(function(g){return !/^0+$/.test(g.text)||g.lt}).concat(pairs),wi;
   for(wi=0;wi<words.length;wi++){
     var g=words[wi];
     if(g.text!=='1')continue;
@@ -487,17 +448,18 @@ async function readFrame(){
       var cx2=(w.bbox.x0+w.bbox.x1)/2,cy2=(w.bbox.y0+w.bbox.y1)/2;
       w.cd=Math.min(Math.hypot(cx2-cb.x0,cy2-cb.y0),Math.hypot(cx2-cb.x1,cy2-cb.y0));
       var pc=pipCount(cb,allBlobs);w.pc=pc;
+      if(w.lt){
+        w.cp=centerPips(dim,bl.lab,allBlobs,cb,w.bbox);
+        if(w.cp<=1&&w.lc>=70)w.text=w.lt;
+        else if(w.cp>=2&&!/^\d/.test(w.text))w.drop=true;
+      }
     }
   });
-  words.forEach(function(w){dbgLines.push('MOT '+w.text+' carte:'+(w.cb?'oui':'non')+' signes:'+w.pc+' dist coin:'+(w.cd?Math.round(w.cd):'-')+(w.cb?' haut carte:'+(w.cb.y1-w.cb.y0):''));});
   words=words.filter(function(w){
+    dbgLines.push('MOT '+w.text+'  gros signes au centre: '+(w.cp===undefined?'-':w.cp)+'  signes: '+(w.pc===undefined?'-':w.pc));
+    if(w.drop||/^0+$/.test(w.text))return false;
     if(!w.cb||!(w.pc>=1))return false;
-    /* une dame n'a que les petits signes des coins ; une carte à chiffre en a autant que son nombre : trop de signes = pas une dame */
-    if(w.text==='Q'){
-      var ns=allBlobs.filter(function(b){return b.x0>=w.cb.x0&&b.x1<=w.cb.x1&&b.y0>=w.cb.y0&&b.y1<=w.cb.y1&&isSuitBlob(dim,bl.lab,b);}).length;
-      if(ns>5)return false;
-    }
-    if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
+    if(/^[KQJA]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
     return !words.some(function(o){return o!==w&&o.cb&&o.cb.x0===w.cb.x0&&o.cb.y0===w.cb.y0&&o.cd<w.cd});
   });
   return {dim:dim,words:words};
