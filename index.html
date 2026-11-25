@@ -418,10 +418,19 @@ async function readFrame(){
       if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=(t==='A'?50:70);if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       /* un 0 peut être un Q : on revérifie sans liste de chiffres */
-      if(ok&&pi<2&&t==='0'){
+      /* la dame Q est traitée comme K, J et A : un Q est souvent lu comme 0, 6, 8 ou 9 par la passe chiffres.
+         On le revérifie avec les lettres KQJA, puis sans liste. Sans « 1 » à gauche (sinon c'est le 0 d'un 10). */
+      if(ok&&pi<2&&/^[0689]$/.test(t)){
+        var oneLeft=false,qj;
+        for(qj=0;qj<bl.list.length;qj++){var o5=bl.list[qj];
+          if(o5!==b&&o5.w<=0.6*o5.h&&o5.x1<=b.x0+2&&b.x0-o5.x1<1.5*b.h&&Math.abs(o5.h-b.h)<0.35*b.h&&Math.abs((o5.y0+o5.y1)/2-(b.y0+b.y1)/2)<0.5*b.h){oneLeft=true;break;}}
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
+        var rl=await worker.recognize(img);
+        var qL=(rl.data.text||'').trim()==='Q'&&rl.data.confidence>=(t==='0'?60:75);
         await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-        var rz=await worker.recognize(img);
-        if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
+        var rz=await worker.recognize(img),zt=(rz.data.text||'').trim();
+        if(zt==='Q'&&rz.data.confidence>=70&&!oneLeft)t='Q';
+        else if(qL&&!oneLeft&&/^[QO0]$/.test(zt)&&rz.data.confidence>=40)t='Q';
       }
       /* un A lu comme 1, 4 ou 7 : revérifié SEULEMENT si la carte a très peu de formes (un As ; un vrai 4 ou 7 en a bien plus) */
       if(ok&&pi<2&&(t==='4'||t==='1'||t==='7')){
