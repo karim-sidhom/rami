@@ -447,6 +447,8 @@ async function readFrame(){
         if(o3.w<=0.6*o3.h&&o3.x1<=a.x0+2&&a.x0-o3.x1<1.5*a.h&&Math.abs(o3.h-a.h)<0.3*a.h&&Math.abs((o3.y0+o3.y1)/2-a.cy)<0.3*a.h){lp=o3;break;}
       }
       if(lp&&acc.indexOf(lp)<0){used.push(a);pairs.push({text:'10',bbox:{x0:lp.x0,y0:Math.min(a.y0,lp.y0),x1:a.x1,y1:Math.max(a.y1,lp.y1)}});return;}
+      /* un 0 tout seul (sans 1 à sa gauche) n'existe pas sur une carte : c'est la dame (Q) lue comme un 0 */
+      a.t='Q';
     }
     if(a.t!=='1'){rest.push(a);return;}
     var partner=null,i2;
