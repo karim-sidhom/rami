@@ -188,25 +188,6 @@ function blobImg(d,b,lab){
   return cc;
 }
 
-/* nombre de trous d'une forme : le rond du Q en a un, un 2, 3 ou 5 n'en a aucun */
-function holeCount(d,lab,b){
-  var w=b.w+2,h=b.h+2,g=new Uint8Array(w*h),x,y,n=0;
-  for(y=0;y<b.h;y++)for(x=0;x<b.w;x++)if(lab[(b.y0+y)*d.w+b.x0+x]===b.id)g[(y+1)*w+x+1]=1;
-  function fill(sx,sy,val){
-    var st=[sy*w+sx],cnt=0;g[sy*w+sx]=val;
-    while(st.length){var i=st.pop(),cx=i%w,cy=(i-cx)/w;cnt++;
-      if(cx>0&&g[i-1]===0){g[i-1]=val;st.push(i-1);}
-      if(cx<w-1&&g[i+1]===0){g[i+1]=val;st.push(i+1);}
-      if(cy>0&&g[i-w]===0){g[i-w]=val;st.push(i-w);}
-      if(cy<h-1&&g[i+w]===0){g[i+w]=val;st.push(i+w);}}
-    return cnt;
-  }
-  fill(0,0,2);
-  var minN=Math.max(4,Math.round(0.012*b.w*b.h));
-  for(y=0;y<h;y++)for(x=0;x<w;x++)if(g[y*w+x]===0&&fill(x,y,3)>=minN)n++;
-  return n;
-}
-
 function regionImg(d,x0,y0,x1,y1){
   var w=x1-x0,h=y1-y0;
   mc.width=w;mc.height=h;
@@ -437,16 +418,19 @@ async function readFrame(){
       if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=(t==='A'?50:70);if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       /* un 0 peut être un Q : on revérifie sans liste de chiffres */
-      if(ok&&pi<2&&t==='0'){
-        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-        var rz=await worker.recognize(img);
-        if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
-      }
-      /* un Q lu comme 2, 3 ou 5 : ces chiffres n'ont aucun trou, un Q en a un. Revérifié seulement dans ce cas. */
-      if(ok&&pi<2&&(t==='2'||t==='3'||t==='5')&&holeCount(dim,bl.lab,b)===1){
+      /* la dame Q est traitée comme K, J et A : un Q est souvent lu comme 0, 6, 8 ou 9 par la passe chiffres.
+         On le revérifie avec les lettres KQJA, puis sans liste. Sans « 1 » à gauche (sinon c'est le 0 d'un 10). */
+      if(ok&&pi<2&&/^[0689]$/.test(t)){
+        var oneLeft=false,qj;
+        for(qj=0;qj<bl.list.length;qj++){var o5=bl.list[qj];
+          if(o5!==b&&o5.w<=0.6*o5.h&&o5.x1<=b.x0+2&&b.x0-o5.x1<1.5*b.h&&Math.abs(o5.h-b.h)<0.35*b.h&&Math.abs((o5.y0+o5.y1)/2-(b.y0+b.y1)/2)<0.5*b.h){oneLeft=true;break;}}
         await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
         var rl=await worker.recognize(img);
-        if((rl.data.text||'').trim()==='Q'&&rl.data.confidence>=65)t='Q';
+        var qL=(rl.data.text||'').trim()==='Q'&&rl.data.confidence>=(t==='0'?60:75);
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
+        var rz=await worker.recognize(img),zt=(rz.data.text||'').trim();
+        if(zt==='Q'&&rz.data.confidence>=70&&!oneLeft)t='Q';
+        else if(qL&&!oneLeft&&/^[QO0]$/.test(zt)&&rz.data.confidence>=40)t='Q';
       }
       /* un A lu comme 1, 4 ou 7 : revérifié SEULEMENT si la carte a très peu de formes (un As ; un vrai 4 ou 7 en a bien plus) */
       if(ok&&pi<2&&(t==='4'||t==='1'||t==='7')){
