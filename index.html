@@ -188,26 +188,23 @@ function blobImg(d,b,lab){
   return cc;
 }
 
-/* trous d'une forme (le rond du Q, du 0, du 6, du 9 en a un ; le 8 en a deux ; le 2, 3, 5, 7 aucun).
-   Renvoie la liste des trous {n: taille, cy: hauteur relative du centre 0..1} */
-function holeList(d,lab,b){
-  var w=b.w+2,h=b.h+2,g=new Uint8Array(w*h),x,y,st,res=[];
+/* nombre de trous d'une forme : le rond du Q en a un, un 2, 3 ou 5 n'en a aucun */
+function holeCount(d,lab,b){
+  var w=b.w+2,h=b.h+2,g=new Uint8Array(w*h),x,y,n=0;
   for(y=0;y<b.h;y++)for(x=0;x<b.w;x++)if(lab[(b.y0+y)*d.w+b.x0+x]===b.id)g[(y+1)*w+x+1]=1;
-  function fill(sx,sy,val,acc){
-    st=[sy*w+sx];g[sy*w+sx]=val;var n=0,sumy=0;
-    while(st.length){
-      var i=st.pop(),cx=i%w,cy=(i-cx)/w;n++;sumy+=cy;
+  function fill(sx,sy,val){
+    var st=[sy*w+sx],cnt=0;g[sy*w+sx]=val;
+    while(st.length){var i=st.pop(),cx=i%w,cy=(i-cx)/w;cnt++;
       if(cx>0&&g[i-1]===0){g[i-1]=val;st.push(i-1);}
       if(cx<w-1&&g[i+1]===0){g[i+1]=val;st.push(i+1);}
       if(cy>0&&g[i-w]===0){g[i-w]=val;st.push(i-w);}
-      if(cy<h-1&&g[i+w]===0){g[i+w]=val;st.push(i+w);}
-    }
-    if(acc)acc.push({n:n,cy:(sumy/n-1)/b.h});
+      if(cy<h-1&&g[i+w]===0){g[i+w]=val;st.push(i+w);}}
+    return cnt;
   }
-  fill(0,0,2,null);
+  fill(0,0,2);
   var minN=Math.max(4,Math.round(0.012*b.w*b.h));
-  for(y=0;y<h;y++)for(x=0;x<w;x++)if(g[y*w+x]===0){var tmp=[];fill(x,y,3,tmp);if(tmp[0].n>=minN)res.push(tmp[0]);}
-  return res;
+  for(y=0;y<h;y++)for(x=0;x<w;x++)if(g[y*w+x]===0&&fill(x,y,3)>=minN)n++;
+  return n;
 }
 
 function regionImg(d,x0,y0,x1,y1){
@@ -440,30 +437,16 @@ async function readFrame(){
       if(pi===2){ok=(/^1?[0Oo]$/.test(t)||/^[KQJA]$/.test(t))&&rr.data.confidence>=(t==='A'?50:70);if(ok)t=t.replace(/[Oo]/,'0');}
       else ok=/^\d{1,2}$/.test(t)&&rr.data.confidence>=50;
       /* un 0 peut être un Q : on revérifie sans liste de chiffres */
-      /* la dame Q est traitée comme K, J et A. La passe chiffres la lit souvent comme 0, 2, 3, 5, 6, 8 ou 9.
-         Un Q a UN trou (son rond) ; un 2, 3, 5 n'en ont pas, un 8 en a deux : un chiffre lu avec un seul trou
-         et un rond au milieu est donc suspect -> on revérifie avec les lettres, puis sans liste.
-         Un « 1 » à gauche = c'est le 0 d'un 10, on n'y touche pas. */
-      if(ok&&pi<2&&/^[0235689]$/.test(t)){
-        var hs=holeList(dim,bl.lab,b),merged=b.h/b.w>=1.4,cand=false;
-        if(hs.length===1){
-          cand=true;
-          if(!merged&&(t==='6'||t==='9')&&(hs[0].cy<0.36||hs[0].cy>0.64))cand=false;
-        }
-        var oneLeft=false,qj;
-        if(cand&&t==='0'){
-          for(qj=0;qj<bl.list.length;qj++){var o5=bl.list[qj];
-            if(o5!==b&&o5.w<=0.6*o5.h&&o5.x1<=b.x0+2&&b.x0-o5.x1<1.5*b.h&&Math.abs(o5.h-b.h)<0.35*b.h&&Math.abs((o5.y0+o5.y1)/2-(b.y0+b.y1)/2)<0.5*b.h){oneLeft=true;break;}}
-        }
-        if(cand&&!oneLeft){
-          await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
-          var rl=await worker.recognize(img),lq1=(rl.data.text||'').trim(),cl=rl.data.confidence;
-          await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
-          var rz=await worker.recognize(img),zt=(rz.data.text||'').trim(),cz=rz.data.confidence,isQ;
-          if(t==='6'||t==='8'||t==='9')isQ=(lq1==='Q'&&cl>=70)||(lq1==='Q'&&cl>=55&&/^[QO0]$/.test(zt));
-          else isQ=(lq1==='Q'&&cl>=55)||(zt==='Q'&&cz>=60);
-          if(isQ)t='Q';
-        }
+      if(ok&&pi<2&&t==='0'){
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:''});
+        var rz=await worker.recognize(img);
+        if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
+      }
+      /* un Q lu comme 2, 3 ou 5 : ces chiffres n'ont aucun trou, un Q en a un. Revérifié seulement dans ce cas. */
+      if(ok&&pi<2&&(t==='2'||t==='3'||t==='5')&&holeCount(dim,bl.lab,b)===1){
+        await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
+        var rl=await worker.recognize(img);
+        if((rl.data.text||'').trim()==='Q'&&rl.data.confidence>=65)t='Q';
       }
       /* un A lu comme 1, 4 ou 7 : revérifié SEULEMENT si la carte a très peu de formes (un As ; un vrai 4 ou 7 en a bien plus) */
       if(ok&&pi<2&&(t==='4'||t==='1'||t==='7')){
@@ -481,7 +464,7 @@ async function readFrame(){
       await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'KQJA'});
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
       dbg.push((lt||'?')+Math.round(rk.data.confidence));
-      if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=(lt==='A'?50:(lt==='Q'&&holeList(dim,bl.lab,b).length===1?55:70))){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
+      if(/^[KQJA]$/.test(lt)&&rk.data.confidence>=(lt==='A'?50:70)){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
     /* Q dont la queue touche le petit signe dessous : forme Q+signe trop haute que l'OCR lit mal (0, 9...).
        Seulement si rien n'a été lu ou si l'OCR a lu 0 : un chiffre déjà lu (6, 8, 9...) n'est jamais touché. Le BAS doit ressembler à un signe et le HAUT à un O/0/Q. */
