@@ -30,7 +30,7 @@ button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px
 <div id="stage">
   <video id="v" playsinline muted autoplay></video>
   <canvas id="ov"></canvas>
-  <div id="top"><span id="st">...</span><span id="clk"><b id="tm">21:06:17</b><small id="dt">26/11/2026</small></span><span id="mute" style="cursor:pointer">🔊</span></div>
+  <div id="top"><span id="st">...</span><span id="clk"><b id="tm">21:08:11</b><small id="dt">26/11/2026</small></span><span id="mute" style="cursor:pointer">🔊</span></div>
   <div id="bottom"><div id="nums">—</div></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -408,43 +408,49 @@ function hasOne(a,list){
   return false;
 }
 
-/* ===== JOKER : lettres J-O-K-E-R empilées (ou couchées) dans le coin d'une carte, sans valeur à côté =====
+/* ===== JOKER : seule carte avec un mot (plusieurs lettres) dans le coin : J-O-K-E-R en colonne, en ligne ou couchées =====
    ajout : ne touche pas aux autres lectures, retire seulement les J/K/O lus à tort dans ce mot */
 function findJokers(dim,bl,acc){
-  var cand=bl.list.filter(function(b){return !isSuitBlob(dim,bl.lab,b)}).sort(function(a,b){return a.y0-b.y0}),res=[],used=[],i,j;
-  for(i=0;i<cand.length;i++){
-    var f=cand[i];
-    if(used.indexOf(f)>=0)continue;
-    var chain=[f],last=f,ext=true;
-    while(ext){
-      ext=false;
-      for(j=0;j<cand.length;j++){
-        var o=cand[j];
-        if(chain.indexOf(o)>=0||used.indexOf(o)>=0||o.y0<last.y0)continue;
-        var size=Math.max(last.w,last.h),gap=o.y0-last.y1;
-        if(gap<-0.15*size||gap>0.9*size)continue;
-        if(Math.abs((o.x0+o.x1)/2-(last.x0+last.x1)/2)>0.45*size)continue;
-        chain.push(o);last=o;ext=true;break;
+  var base=bl.list.filter(function(b){return !isSuitBlob(dim,bl.lab,b)}),res=[],used=[];
+  function build(dir){
+    var cand=base.slice().sort(dir==='v'?function(a,b){return a.y0-b.y0}:function(a,b){return a.x0-b.x0}),i,j;
+    for(i=0;i<cand.length;i++){
+      var f=cand[i];
+      if(used.indexOf(f)>=0)continue;
+      var chain=[f],last=f,ext=true;
+      while(ext){
+        ext=false;
+        for(j=0;j<cand.length;j++){
+          var o=cand[j];
+          if(chain.indexOf(o)>=0||used.indexOf(o)>=0)continue;
+          var size=Math.max(last.w,last.h),gap,off;
+          if(dir==='v'){if(o.y0<last.y0)continue;gap=o.y0-last.y1;off=Math.abs((o.x0+o.x1)/2-(last.x0+last.x1)/2);}
+          else{if(o.x0<last.x0)continue;gap=o.x0-last.x1;off=Math.abs((o.y0+o.y1)/2-(last.y0+last.y1)/2);}
+          if(gap<-0.15*size||gap>0.9*size||off>0.45*size)continue;
+          chain.push(o);last=o;ext=true;break;
+        }
       }
+      var minLen=dir==='v'?4:3;
+      if(chain.length<minLen||chain.length>6)continue;
+      var sameH=chain.every(function(o){return Math.abs(o.h-f.h)<0.35*f.h}),sameW=chain.every(function(o){return Math.abs(o.w-f.w)<0.3*f.w});
+      if(dir==='v'?(!sameH&&!sameW):!sameH)continue;
+      var cb=null,k;
+      for(k=0;k<chain.length&&!cb;k++)cb=cardBox(dim,chain[k]);
+      if(!cb)continue;
+      var bb={x0:Math.min.apply(null,chain.map(function(o){return o.x0})),y0:Math.min.apply(null,chain.map(function(o){return o.y0})),
+              x1:Math.max.apply(null,chain.map(function(o){return o.x1})),y1:Math.max.apply(null,chain.map(function(o){return o.y1}))};
+      var cw=cb.x1-cb.x0,ch=cb.y1-cb.y0,mx=(bb.x0+bb.x1)/2,my=(bb.y0+bb.y1)/2;
+      var dx=Math.min(mx-cb.x0,cb.x1-mx),dy=Math.min(my-cb.y0,cb.y1-my);
+      if(dx>0.3*cw||dy>0.3*ch)continue;
+      var other=acc.some(function(a){
+        return chain.indexOf(a)<0&&(a.cf||0)>=85&&a.x0>=cb.x0&&a.x1<=cb.x1&&a.y0>=cb.y0&&a.y1<=cb.y1;
+      });
+      if(other)continue;
+      chain.forEach(function(o){used.push(o)});
+      res.push({chain:chain,bbox:bb,cb:cb,col:cardColor2(dim,bl.lab,chain,cb),cd:Math.hypot(dx,dy)});
     }
-    if(chain.length<4||chain.length>6)continue;
-    var sameH=chain.every(function(o){return Math.abs(o.h-f.h)<0.35*f.h}),sameW=chain.every(function(o){return Math.abs(o.w-f.w)<0.3*f.w});
-    if(!sameH&&!sameW)continue;
-    var cb=null,k;
-    for(k=0;k<chain.length&&!cb;k++)cb=cardBox(dim,chain[k]);
-    if(!cb)continue;
-    var bb={x0:Math.min.apply(null,chain.map(function(o){return o.x0})),y0:Math.min.apply(null,chain.map(function(o){return o.y0})),
-            x1:Math.max.apply(null,chain.map(function(o){return o.x1})),y1:Math.max.apply(null,chain.map(function(o){return o.y1}))};
-    var cw=cb.x1-cb.x0,ch=cb.y1-cb.y0,mx=(bb.x0+bb.x1)/2,my=(bb.y0+bb.y1)/2;
-    var dx=Math.min(mx-cb.x0,cb.x1-mx),dy=Math.min(my-cb.y0,cb.y1-my);
-    if(dx>0.3*cw||dy>0.3*ch)continue;
-    var other=acc.some(function(a){
-      return chain.indexOf(a)<0&&(a.cf||0)>=85&&a.x0>=cb.x0&&a.x1<=cb.x1&&a.y0>=cb.y0&&a.y1<=cb.y1;
-    });
-    if(other)continue;
-    chain.forEach(function(o){used.push(o)});
-    res.push({chain:chain,bbox:bb,cb:cb,col:cardColor2(dim,bl.lab,chain,cb),cd:Math.hypot(dx,dy)});
   }
+  build('v');build('h');
   return res;
 }
 
