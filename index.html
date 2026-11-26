@@ -15,6 +15,9 @@ canvas#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #nums{font-size:44px;font-weight:700;letter-spacing:2px;direction:ltr;min-height:56px;color:#ffd54a;word-break:break-all}
 #start{position:absolute;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#000;z-index:5}
 button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px;background:#ffd54a;color:#000;font-weight:700}
+#clk{display:flex;flex-direction:column;align-items:center;direction:ltr;line-height:1.2;text-align:center}
+#clk b{font-size:20px;font-variant-numeric:tabular-nums}
+#clk small{font-size:12px;opacity:.85}
 #msg{font-size:14px;opacity:.8;padding:0 20px;text-align:center}
 </style>
 </head>
@@ -27,7 +30,7 @@ button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px
 <div id="stage">
   <video id="v" playsinline muted autoplay></video>
   <canvas id="ov"></canvas>
-  <div id="top"><span id="st">...</span><span id="mute" style="cursor:pointer">🔊</span></div>
+  <div id="top"><span id="st">...</span><span id="clk"><b id="tm"></b><small id="dt"></small></span><span id="mute" style="cursor:pointer">🔊</span></div>
   <div id="bottom"><div id="nums">—</div></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -83,6 +86,17 @@ function speak(t,lang,voice){
   u.lang=lang||'ar-SA';if(vo)u.voice=vo;u.rate=0.9;
   speechSynthesis.speak(u);
 }
+
+/* horaire et date en haut */
+(function(){
+  var tm=document.getElementById('tm'),dt=document.getElementById('dt');
+  function tick(){
+    var n=new Date();
+    tm.textContent=n.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    dt.textContent=n.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  }
+  tick();setInterval(tick,1000);
+})();
 
 document.getElementById('mute').onclick=function(){
   voiceOn=!voiceOn;this.textContent=voiceOn?'🔊':'🔇';
