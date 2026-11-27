@@ -15,9 +15,6 @@ canvas#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #nums{font-size:44px;font-weight:700;letter-spacing:2px;direction:ltr;min-height:56px;color:#ffd54a;word-break:break-all}
 #start{position:absolute;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#000;z-index:5}
 button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px;background:#ffd54a;color:#000;font-weight:700}
-#clk{display:flex;flex-direction:column;align-items:center;direction:ltr;line-height:1.2;text-align:center}
-#clk b{font-size:20px;font-variant-numeric:tabular-nums}
-#clk small{font-size:12px;opacity:.85}
 #msg{font-size:14px;opacity:.8;padding:0 20px;text-align:center}
 </style>
 </head>
@@ -30,7 +27,7 @@ button{font:inherit;border:0;border-radius:12px;padding:14px 28px;font-size:18px
 <div id="stage">
   <video id="v" playsinline muted autoplay></video>
   <canvas id="ov"></canvas>
-  <div id="top"><span id="st">...</span><span id="clk"><b id="tm">21:24:18</b><small id="dt">26/11/2026</small></span><span id="mute" style="cursor:pointer">🔊</span></div>
+  <div id="top"><span id="st">...</span><span id="mute" style="cursor:pointer">🔊</span></div>
   <div id="bottom"><div id="nums">—</div></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -51,12 +48,12 @@ function pickVoice(){
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
 /* nombres dits en mots arabes (le 10 en entier, le roi K) */
-var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد','JOKER':'جوكر'};
+var AR={'1':'واحد','2':'اثنان','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','10':'عشرة','K':'ملك','Q':'ملكة','J':'ولد'};
 /* arabe par défaut ; si le téléphone n'a pas de voix arabe : français, sinon anglais */
 var PACKS={
   ar:{lang:'ar-SA',n:AR,s:{r:'أحمر',n:'أسود',h:'كور',d:'كارو',s:'بيك',c:'تريفل'}},
-  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet','JOKER':'joker'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
-  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack','JOKER':'joker'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
+  fr:{lang:'fr-FR',n:{'1':'un','2':'deux','3':'trois','4':'quatre','5':'cinq','6':'six','7':'sept','8':'huit','9':'neuf','10':'dix','K':'roi','Q':'dame','J':'valet'},s:{r:'rouge',n:'noir',h:'cœur',d:'carreau',s:'pique',c:'trèfle'}},
+  en:{lang:'en-US',n:{'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','K':'king','Q':'queen','J':'jack'},s:{r:'red',n:'black',h:'hearts',d:'diamonds',s:'spades',c:'clubs'}}
 };
 function pickPack(){
   if(arVoice)return {p:PACKS.ar,v:arVoice};
@@ -87,7 +84,6 @@ function speak(t,lang,voice){
   speechSynthesis.speak(u);
 }
 
-/* tampon de version : date et heure de création du fichier (fixe, pas une horloge) */
 document.getElementById('mute').onclick=function(){
   voiceOn=!voiceOn;this.textContent=voiceOn?'🔊':'🔇';
   if(!voiceOn)speechSynthesis.cancel();
@@ -357,113 +353,6 @@ function group(acc){
   });
 }
 
-/* ===== DAME (Q) : reconnue par sa forme (un seul trou, décalé vers le haut à cause de la queue) =====
-   ajout : ne remplace rien, sert seulement à corriger un Q lu comme 0 / 6 / 8 / 9 ou pas lu du tout */
-/* mask: Uint8Array w*h (1 = encre du blob) ; renvoie true si la forme est un Q (un seul trou, queue en bas) */
-function looksQueen(mk,w,h){
-  if(w<6||h<10)return false;
-  var asp=w/h;if(asp<0.5||asp>1.3)return false;
-  var N=w*h,out=new Uint8Array(N),stk=new Int32Array(N),sp=0,i,x,y;
-  function push(p){if(!mk[p]&&!out[p]){out[p]=1;stk[sp++]=p;}}
-  for(x=0;x<w;x++){push(x);push((h-1)*w+x);}
-  for(y=0;y<h;y++){push(y*w);push(y*w+w-1);}
-  while(sp){var q=stk[--sp],qx=q%w,qy=(q-qx)/w;
-    if(qx>0)push(q-1);if(qx<w-1)push(q+1);if(qy>0)push(q-w);if(qy<h-1)push(q+w);}
-  /* trous = fond non atteint depuis l'extérieur */
-  var hole=new Uint8Array(N),comp=0,sizes=[],best=-1,lab=new Int32Array(N);
-  for(i=0;i<N;i++){
-    if(mk[i]||out[i]||lab[i])continue;
-    comp++;var cnt=0;sp=0;stk[sp++]=i;lab[i]=comp;
-    while(sp){var q2=stk[--sp],qx2=q2%w,qy2=(q2-qx2)/w;cnt++;
-      if(qx2>0&&!mk[q2-1]&&!out[q2-1]&&!lab[q2-1]){lab[q2-1]=comp;stk[sp++]=q2-1;}
-      if(qx2<w-1&&!mk[q2+1]&&!out[q2+1]&&!lab[q2+1]){lab[q2+1]=comp;stk[sp++]=q2+1;}
-      if(qy2>0&&!mk[q2-w]&&!out[q2-w]&&!lab[q2-w]){lab[q2-w]=comp;stk[sp++]=q2-w;}
-      if(qy2<h-1&&!mk[q2+w]&&!out[q2+w]&&!lab[q2+w]){lab[q2+w]=comp;stk[sp++]=q2+w;}}
-    sizes.push(cnt);
-  }
-  var big=[];sizes.forEach(function(c,k){if(c>=0.01*N)big.push(k+1);});
-  if(big.length!==1)return false;
-  var id=big[0],sy=0,n=0,y0=h,y1=0;
-  for(i=0;i<N;i++)if(lab[i]===id){y=(i/w)|0;sy+=y;n++;if(y<y0)y0=y;if(y>y1)y1=y;}
-  var cy=sy/n/h,below=0,above=0;
-  for(i=0;i<N;i++)if(mk[i]){y=(i/w)|0;if(y>y1)below++;else if(y<y0)above++;}
-  var d=(below-above)/Math.max(1,mk.reduce(function(a,b){return a+b},0));
-  if(cy>=0.34&&cy<=0.445)return true;
-  if(cy>0.445&&cy<=0.47&&d>=0.03)return true;
-  return false;
-}
-
-function queenShape(d,lab,b){
-  var mk=new Uint8Array(b.w*b.h),x,y,k=0;
-  for(y=b.y0;y<b.y1;y++)for(x=b.x0;x<b.x1;x++)mk[k++]=lab[y*d.w+x]===b.id?1:0;
-  return looksQueen(mk,b.w,b.h);
-}
-/* un "1" fin juste à gauche = le 0 appartient à un 10, ce n'est pas une dame */
-function hasOne(a,list){
-  for(var i=0;i<list.length;i++){
-    var o=list[i];
-    if(o===a)continue;
-    if(o.w<=0.6*o.h&&o.x1<=a.x0+2&&a.x0-o.x1<1.5*a.h&&Math.abs(o.h-a.h)<0.3*a.h&&Math.abs((o.y0+o.y1)/2-(a.y0+a.y1)/2)<0.3*a.h)return true;
-  }
-  return false;
-}
-
-/* ===== JOKER : la seule carte avec plus d'une lettre DIFFÉRENTE (le roi/la dame/le valet répètent la même) ===== */
-function looseSuit(d,lab,b){
-  var asp=b.w/b.h;
-  if(asp<0.5||asp>1.8)return false;
-  var T=suitTemplates(),m=suitMask(d,lab,b),best=0,s0;
-  for(var key in T){s0=suitScore(m,T[key]);if(s0>best)best=s0;}
-  return best>=0.6;
-}
-function findJokers(dim,bl,acc){
-  var base=bl.list.filter(function(b){
-    if(acc.indexOf(b)>=0&&/^\d$/.test(b.t)&&(b.cf||0)>=50)return false; /* un chiffre n'est pas une lettre */
-    return !looseSuit(dim,bl.lab,b);
-  }),res=[],cards=[],boxes=0;
-  /* chaque forme est rattachée à sa carte */
-  base.forEach(function(b){
-    var cx0=(b.x0+b.x1)/2,cy0=(b.y0+b.y1)/2,c=null,k;
-    for(k=0;k<cards.length&&!c;k++){var q=cards[k].cb;if(cx0>=q.x0&&cx0<=q.x1&&cy0>=q.y0&&cy0<=q.y1)c=cards[k];}
-    if(!c){
-      if(boxes>=10)return;
-      boxes++;
-      var cb=cardBox(dim,b);
-      if(!cb)return;
-      c={cb:cb,items:[]};cards.push(c);
-    }
-    c.items.push(b);
-  });
-  /* même lettre = même forme (ou la même retournée à 180°, coin opposé) */
-  function same(m1,m2){return Math.max(suitIou(m1,m2),suitIou(m1,m2.slice().reverse()))>=0.6;}
-  cards.forEach(function(c){
-    var cb=c.cb,cw=cb.x1-cb.x0,ch=cb.y1-cb.y0,L=[];
-    c.items.forEach(function(o){
-      var sz=Math.max(o.w,o.h);
-      if(sz<0.03*ch||sz>0.2*ch)return;
-      var mx=(o.x0+o.x1)/2,my=(o.y0+o.y1)/2;
-      if(Math.min(mx-cb.x0,cb.x1-mx)>0.4*cw||Math.min(my-cb.y0,cb.y1-my)>0.4*ch)return; /* l'écriture est au bord de la carte */
-      o.m=suitMask(dim,bl.lab,o);L.push(o);
-    });
-    var cl=[];
-    L.forEach(function(o){
-      for(var k=0;k<cl.length;k++)if(same(cl[k][0].m,o.m)){cl[k].push(o);return;}
-      cl.push([o]);
-    });
-    if(cl.length<2||L.length>12)return;
-    /* valeur + signe non reconnu : une forme lue par l'OCR, l'autre non */
-    if(cl.length===2){
-      var r0=cl[0].some(function(o){return acc.indexOf(o)>=0}),r1=cl[1].some(function(o){return acc.indexOf(o)>=0});
-      if(r0!==r1)return;
-    }
-    var bb={x0:Math.min.apply(null,L.map(function(o){return o.x0})),y0:Math.min.apply(null,L.map(function(o){return o.y0})),
-            x1:Math.max.apply(null,L.map(function(o){return o.x1})),y1:Math.max.apply(null,L.map(function(o){return o.y1}))};
-    var mx2=(bb.x0+bb.x1)/2,my2=(bb.y0+bb.y1)/2;
-    res.push({chain:L,bbox:bb,cb:cb,col:cardColor2(dim,bl.lab,L,cb),cd:Math.hypot(Math.min(mx2-cb.x0,cb.x1-mx2),Math.min(my2-cb.y0,cb.y1-my2))});
-  });
-  return res;
-}
-
 async function readFrame(){
   var dim=prep();
   if(!dim)return null;
@@ -488,7 +377,7 @@ async function readFrame(){
         var rz=await worker.recognize(img);
         if((rz.data.text||'').trim()==='Q'&&rz.data.confidence>=70)t='Q';
       }
-      if(ok){b.t=t;b.cf=rr.data.confidence;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
+      if(ok){b.t=t;b.cy=(b.y0+b.y1)/2;acc.push(b);got=true;break;}
     }
     /* lettres K (roi), Q (dame), J (valet) : lues seulement si ce n'est pas un chiffre */
     if(!got&&b.w/b.h>=0.3&&b.w/b.h<=1.3){
@@ -496,15 +385,7 @@ async function readFrame(){
       var rk=await worker.recognize(img),lt=(rk.data.text||'').trim();
       if(/^[KQJ]$/.test(lt)&&rk.data.confidence>=70){b.t=lt;b.cy=(b.y0+b.y1)/2;acc.push(b);}
     }
-    /* dame non lue par l'OCR : on la reconnaît à sa forme */
-    if(!got&&acc.indexOf(b)<0&&!hasOne(b,bl.list)&&queenShape(dim,bl.lab,b)){b.t='Q';b.cf=0;b.cy=(b.y0+b.y1)/2;acc.push(b);}
   }
-  var jokers=findJokers(dim,bl,acc);
-  jokers.forEach(function(jk){acc=acc.filter(function(a){return jk.chain.indexOf(a)<0});});
-  /* dame lue comme 0/6/8/9 : corrigée en Q si la forme est celle d'un Q (le 0 d'un 10 est protégé) */
-  acc.forEach(function(a){
-    if(/^[0689]$/.test(a.t)&&(a.t==='0'||(a.cf||0)<90)&&!hasOne(a,bl.list)&&queenShape(dim,bl.lab,a))a.t='Q';
-  });
   var pairs=[],rest=[],used=[];
   acc.sort(function(p1,p2){return p1.x0-p2.x0});
   acc.forEach(function(a){
@@ -553,7 +434,6 @@ async function readFrame(){
       var pc=pipCount(cb,allBlobs);w.pc=pc;
     }
   });
-  jokers.forEach(function(jk){words.push({text:'JOKER',bbox:jk.bbox,col:jk.col,cb:jk.cb,cd:jk.cd,pc:jk.chain.length});});
   words=words.filter(function(w){
     if(!w.cb||!(w.pc>=1))return false;
     if(/^[KQJ]$/.test(w.text)&&w.cd>0.25*(w.cb.y1-w.cb.y0))return false;
